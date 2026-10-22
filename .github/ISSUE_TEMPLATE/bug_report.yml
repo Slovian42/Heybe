@@ -1,0 +1,22 @@
+name: Bug report / 问题报告
+description: Something is broken / 功能异常
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "请勿粘贴任何 API key、token 或个人数据。Do not paste API keys, tokens or personal data."
+  - type: textarea
+    id: what
+    attributes: { label: What happened / 发生了什么, description: Steps to reproduce / 复现步骤 }
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes: { label: Expected / 期望结果 }
+    validations: { required: true }
+  - type: input
+    id: versions
+    attributes: { label: Versions / 版本, placeholder: "OpenGrok commit, FastClaw v1.4.0, macOS 15.x, Node 20.x" }
+    validations: { required: true }
+  - type: textarea
+    id: logs
+    attributes: { label: Logs (redacted) / 日志（已脱敏）, render: text }

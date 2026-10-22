@@ -1,0 +1,16 @@
+name: Feature request / 功能建议
+description: Suggest an idea / 提出新想法
+labels: [enhancement]
+body:
+  - type: textarea
+    id: scenario
+    attributes: { label: Scenario / 使用场景, description: What do you want it to do for you? / 你想让它替你做什么？ }
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes: { label: Proposal / 建议方案 }
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area / 模块
+      options: [desktop, task-manager, fastclaw-adapter, shared-memory, docs, other]
