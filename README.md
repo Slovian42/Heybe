@@ -31,7 +31,7 @@ cp .env.example .env   # 只填你自己的值；.env 已被 git 忽略
 - 默认强制沙箱：`FASTCLAW_SANDBOX_ENFORCE=1`（需 OrbStack/Docker）。
 
 ## 许可证
-自研代码许可证**待定**（候选 Apache-2.0 / AGPL-3.0），见 [LICENSE](LICENSE)。FastClaw 单独适用 FastClaw Community License，见 [NOTICE](NOTICE)。
+自研代码采用 [Apache License 2.0](LICENSE)，Copyright 2026 Slovian Inc。贡献需 DCO 签署（`git commit -s`），见 [CONTRIBUTING.md](CONTRIBUTING.md)。FastClaw 单独适用 FastClaw Community License，见 [NOTICE](NOTICE)。
 
 ---
 
@@ -63,4 +63,4 @@ pnpm install && pnpm lint && pnpm test
 - Sandbox enforced by default: `FASTCLAW_SANDBOX_ENFORCE=1` (requires OrbStack/Docker).
 
 ### License
-License for our own code is **TBD** (Apache-2.0 or AGPL-3.0); see [LICENSE](LICENSE). FastClaw is separately governed by the FastClaw Community License; see [NOTICE](NOTICE). Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md).
+Our own code is licensed under the [Apache License 2.0](LICENSE), Copyright 2026 Slovian Inc. Contributions require DCO sign-off (`git commit -s`). FastClaw is separately governed by the FastClaw Community License; see [NOTICE](NOTICE). Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md).

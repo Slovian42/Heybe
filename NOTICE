@@ -1,5 +1,8 @@
 OpenGrok Community (codename)
-Copyright (c) 2026 Slovian Inc.
+Copyright 2026 Slovian Inc
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+本仓库自研代码采用 Apache-2.0 许可证。
 
 This project is designed to run on top of FastClaw (https://github.com/fastclaw-ai/fastclaw)
 and talks to it only through FastClaw's /v1/* HTTP API. FastClaw is NOT included in this

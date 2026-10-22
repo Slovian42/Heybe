@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "description": "OpenGrok Community (codename): local personal agent assistant on top of FastClaw /v1 API",
   "packageManager": "pnpm@10.34.6",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "lint": "eslint . && node scripts/check-boundaries.mjs && pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
@@ -17,5 +19,11 @@
     "typescript-eslint": "^8.13.0",
     "vitest": "^2.1.4"
   },
-  "pnpm": { "onlyBuiltDependencies": ["better-sqlite3", "esbuild"] }
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
+  "license": "Apache-2.0"
 }

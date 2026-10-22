@@ -18,8 +18,18 @@ pnpm test   # vitest
 4. **Honest status.** Code must not report success without verifiable evidence (artifacts, tool results). 无证据不报成功。
 5. Small PRs, conventional commits (`feat:`, `fix:`, `docs:` …), tests for logic.
 
-## Sign-off / 签署
-The project license is still being decided (see LICENSE). Contributions will require a
-contributor agreement (DCO sign-off `git commit -s` at minimum; a CLA may be required once
-the license is chosen). Please wait for that policy before sending large external PRs.
-许可证确定前，外部贡献需至少 DCO 签署；可能另需 CLA。
+## DCO sign-off / 签署（必需）
+This project is licensed under Apache-2.0 and uses the [Developer Certificate of Origin](https://developercertificate.org/) (DCO 1.1).
+By signing off you certify you wrote the change or otherwise have the right to submit it under the project license.
+
+Every commit must carry a `Signed-off-by` trailer matching the author:
+
+```bash
+git commit -s -m "feat: ..."
+# adds: Signed-off-by: Your Name <you@example.com>
+git commit --amend -s --no-edit        # fix the last commit
+git rebase --signoff main              # fix all commits on your branch
+```
+
+CI fails any PR containing a commit without `Signed-off-by`.
+本项目采用 Apache-2.0 与 DCO：每个 commit 必须用 `git commit -s` 附 `Signed-off-by`，否则 CI 不通过。
