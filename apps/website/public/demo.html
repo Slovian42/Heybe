@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Heybe clickable prototype (design preview) | Heybe</title>
+<meta name="description" content="Try the Heybe desktop app design prototype in your browser: onboarding, chat, a task running in a safe sandbox, the approval dialog, results and settings. Sample content only.">
+<link rel="canonical" href="https://heybe.dev/demo">
+<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#0D2B52">
+<meta property="og:type" content="website"><meta property="og:site_name" content="Heybe"><meta property="og:title" content="Heybe clickable prototype (design preview)"><meta property="og:description" content="Click through the Heybe desktop app design: chat, task progress, approval dialog and results. Sample content."><meta property="og:url" content="https://heybe.dev/demo"><meta property="og:image" content="https://heybe.dev/og.png">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://heybe.dev/og.png">
+<link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin><style>@font-face{font-family:Inter;font-style:normal;font-weight:400 800;font-display:swap;src:url(/fonts/inter-latin.woff2) format("woff2")}.backlink{position:absolute;left:84px;font-size:12px;font-weight:600;color:#1E88E5;text-decoration:none;z-index:2}.backlink:hover{text-decoration:underline}@media(max-width:700px){.backlink{display:none}}</style>
+<style>
+:root{--blue:#1E88E5;--navy:#0D2B52;--cloud:#F7FAFD;--red:#E8453C;--gray:#5B6575;--line:#E3E9F1;--soft:#EEF3F9;--green:#1F9D6B;--amber:#C98200;--ink2:#33465F}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden}
+body{font-family:Inter,system-ui,sans-serif;font-feature-settings:"cv11","ss01","tnum";color:var(--navy);background:#d9e1eb;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.win{position:absolute;inset:0;background:var(--cloud);display:flex;flex-direction:column}
+.titlebar{height:38px;flex:none;display:flex;align-items:center;padding:0 14px;border-bottom:1px solid var(--line);background:#fff;position:relative}
+.lights{display:flex;gap:8px}.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.lights i:nth-child(1){background:#FF5F57}.lights i:nth-child(2){background:#FEBC2E}.lights i:nth-child(3){background:#28C840}
+.titlebar .t{position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:var(--gray);pointer-events:none}
+.mock{position:absolute;right:14px;font-size:11px;color:#8a95a5;border:1px dashed #c5cfdb;border-radius:6px;padding:1px 7px}
+.body{flex:1;display:flex;min-height:0}
+/* sidebar */
+.side{width:244px;flex:none;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;padding:14px 12px}
+.logo{font-weight:800;font-size:20px;letter-spacing:-.02em;padding:2px 8px 12px}.logo span{color:var(--red)}
+.newbtn{display:flex;align-items:center;gap:8px;justify-content:center;background:var(--red);color:#fff;border-radius:10px;padding:9px 12px;font-weight:600;margin-bottom:14px}
+.sec{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#8a95a5;padding:10px 8px 4px}
+.item{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:8px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item.on{background:var(--soft);color:var(--navy);font-weight:600}
+.item .grow{flex:1;overflow:hidden;text-overflow:ellipsis}
+.item.dim{color:#a3adbb}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;background:#c5cfdb}
+.dot.run{background:var(--blue);box-shadow:0 0 0 3px rgba(30,136,229,.18)}
+.dot.ok{background:var(--green)}.dot.wait{background:var(--amber)}.dot.red{background:var(--red)}
+.side .foot{margin-top:auto;border-top:1px solid var(--line);padding-top:10px}
+.soon{font-size:10.5px;font-weight:600;color:#8a95a5;background:var(--soft);border-radius:999px;padding:1px 7px;margin-left:auto}
+.ico{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+/* main */
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.top{height:54px;flex:none;display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.6)}
+.top h1{font-size:16px;margin:0;font-weight:700;letter-spacing:-.01em}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;border-radius:999px;padding:3px 10px;background:#E7F5EE;color:#157A52}
+.badge.blue{background:#E6F0FB;color:#1565C0}.badge.gray{background:var(--soft);color:var(--gray)}.badge.amber{background:#FFF4DC;color:#8A5A00}
+.btn{display:inline-flex;align-items:center;gap:7px;border-radius:10px;padding:8px 14px;font-weight:600;font-size:13.5px;border:1px solid var(--line);background:#fff;color:var(--navy);white-space:nowrap}
+.btn.pri{background:var(--red);border-color:var(--red);color:#fff}
+.btn.navy{background:var(--navy);border-color:var(--navy);color:#fff}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--gray)}
+.card{background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(13,43,82,.08),0 0 0 1px rgba(13,43,82,.04)}
+.muted{color:var(--gray)}.small{font-size:12.5px}
+.kbd{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;background:var(--soft);border-radius:5px;padding:1px 6px;color:var(--ink2)}
+/* chat */
+.thread{flex:1;overflow:hidden;padding:28px 0 12px}
+.col{max-width:760px;margin:0 auto;padding:0 32px}
+.msg{display:flex;gap:12px;margin-bottom:22px}
+.msg.me{justify-content:flex-end}
+.bubble{background:var(--navy);color:#fff;border-radius:18px 18px 4px 18px;padding:11px 16px;max-width:520px}
+.av{width:30px;height:30px;border-radius:9px;background:var(--red);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none;font-size:14px}
+.reply{flex:1;min-width:0}.reply p{margin:0 0 10px}
+.composer{flex:none;padding:0 0 18px}
+.box{background:#fff;border:1px solid #cfd8e3;border-radius:16px;padding:12px 12px 10px 16px;box-shadow:0 2px 10px rgba(13,43,82,.06)}
+.box .ph{color:#9aa5b4;padding:4px 0 12px}
+.box .row{display:flex;align-items:center;gap:8px}
+.send{margin-left:auto;width:34px;height:34px;border-radius:10px;background:var(--red);display:flex;align-items:center;justify-content:center;color:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:12.5px;color:var(--ink2);background:#fff}
+.under{font-size:12px;color:#8a95a5;text-align:center;margin-top:8px}
+
+.wel{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 40px 30px;background:radial-gradient(1200px 500px at 50% -10%,#fff 0,var(--cloud) 60%)}
+.steps{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--gray);margin-bottom:22px}
+.steps b{display:inline-flex;width:20px;height:20px;border-radius:50%;align-items:center;justify-content:center;background:var(--soft);font-size:11px;margin-right:6px;color:var(--gray)}
+.steps .on{color:var(--navy);font-weight:600}.steps .on b{background:var(--navy);color:#fff}
+.steps .bar{width:36px;height:1px;background:#cfd8e3}
+.wel h1{font-size:38px;line-height:1.1;letter-spacing:-.025em;margin:0 0 8px;text-align:center}
+.wel .lead{color:var(--gray);font-size:16px;margin:0 0 24px;text-align:center}
+.q{font-weight:700;font-size:15px;margin:0 0 12px;width:880px}
+.opts{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;width:880px}
+.opt{padding:20px;position:relative}
+.opt.sel{box-shadow:0 0 0 2px var(--red),0 6px 20px rgba(232,69,60,.10)}
+.opt h3{margin:0 0 2px;font-size:16px;display:flex;align-items:center;gap:8px}
+.opt .d{color:var(--gray);margin:0 0 14px;font-size:13.5px}
+.radio{position:absolute;top:20px;right:20px;width:18px;height:18px;border-radius:50%;border:2px solid #c5cfdb}
+.sel .radio{border:5px solid var(--red)}
+.seg{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.seg span{border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:13px;font-weight:600;color:var(--ink2)}
+.seg span.on{border-color:var(--navy);background:var(--navy);color:#fff}
+.seg em{font-style:normal;font-weight:500;opacity:.7;margin-left:4px;font-size:11.5px}
+.lbl{font-size:12.5px;font-weight:600;margin-bottom:6px;display:flex;justify-content:space-between}
+.lbl a{color:var(--blue);font-weight:500;text-decoration:none}
+.inp{display:flex;align-items:center;gap:8px;border:1px solid #cfd8e3;border-radius:10px;padding:9px 12px;background:#fff;font-size:14px;letter-spacing:.15em;color:var(--ink2)}
+.inp .show{margin-left:auto;letter-spacing:0;font-size:12.5px;font-weight:600;color:var(--blue)}
+.hint{font-size:12px;color:var(--gray);margin-top:8px;display:flex;gap:6px;align-items:flex-start}
+.facts{margin:0;padding:0;list-style:none;font-size:13px;color:var(--ink2)}
+.facts li{display:flex;gap:8px;margin-bottom:7px}
+.facts .ico{color:var(--gray);margin-top:2px}
+.warn{background:#FFF8E8;color:#7A5200;border-radius:10px;padding:8px 10px;font-size:12.5px;margin-top:10px}
+.footbar{width:880px;display:flex;align-items:center;gap:16px;margin-top:20px}
+.safe{display:flex;align-items:center;gap:10px;flex:1;background:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 0 0 1px var(--line);font-size:13px}
+.safe .ico{color:var(--green);width:20px;height:20px}
+.prep{font-size:12px;color:var(--gray);display:flex;align-items:center;gap:6px;margin-left:auto;white-space:nowrap}
+.pulse{width:7px;height:7px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 4px rgba(30,136,229,.18)}
+
+
+.tbl{width:100%;border-collapse:collapse;font-size:13px;margin:4px 0 12px}
+.plan{border:1px solid var(--line);border-radius:12px;background:#fff;padding:12px 14px;margin:6px 0 12px}
+.plan ol{margin:6px 0 0;padding-left:20px;color:var(--ink2)}.plan li{margin:2px 0}
+.taskchip{display:flex;align-items:center;gap:10px;border-radius:12px;background:#E6F0FB;padding:10px 14px;color:#0F4C8A;font-size:13px}
+.taskchip b{color:var(--navy)}
+.prog{height:4px;border-radius:2px;background:#cfe0f5;flex:1;max-width:120px;overflow:hidden}.prog i{display:block;height:100%;width:20%;background:var(--blue)}
+.meta{font-size:12px;color:#8a95a5;margin-top:6px}
+.typing{display:inline-flex;gap:4px}.typing i{width:6px;height:6px;border-radius:50%;background:#b8c4d3}
+
+
+.tw{flex:1;display:grid;grid-template-columns:1fr 300px;gap:20px;padding:22px 24px;min-height:0}
+.tcard{padding:22px 24px;display:flex;flex-direction:column}
+.thead{display:flex;align-items:flex-start;gap:14px}
+.thead h2{margin:0;font-size:20px;letter-spacing:-.015em}
+.thead .sub{color:var(--gray);font-size:13px;margin-top:2px}
+.bigbar{height:6px;border-radius:3px;background:var(--soft);margin:18px 0 6px;overflow:hidden}.bigbar i{display:block;height:100%;width:52%;background:linear-gradient(90deg,var(--blue),#5AA9F0)}
+.steplist{list-style:none;margin:14px 0 0;padding:0}
+.st{display:flex;gap:14px;padding:11px 0;border-top:1px solid var(--line);align-items:flex-start}
+.st:first-child{border-top:0}
+.si{width:24px;height:24px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center}
+.si.ok{background:#E7F5EE;color:var(--green)}.si.run{border:2.5px solid #cfe0f5;border-top-color:var(--blue)}
+.si.next{border:2px dashed #c5cfdb}
+.si .ico{width:14px;height:14px;stroke-width:2.6}
+.st .tx{flex:1}.st .tx b{font-weight:600}.st .tx .d{font-size:12.5px;color:var(--gray);margin-top:1px}
+.st.next .tx b{color:#8a95a5;font-weight:500}
+.tag{font-size:11.5px;font-weight:600;border-radius:6px;padding:2px 8px;white-space:nowrap}
+.tag.ok{background:#E7F5EE;color:#157A52}.tag.run{background:#E6F0FB;color:#1565C0}.tag.next{background:var(--soft);color:#8a95a5}
+.srcs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.srcs span{font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:1px 7px;color:var(--ink2);background:#fff}
+.rp{display:flex;flex-direction:column;gap:14px}
+.panel{padding:16px 18px}
+.panel h4{margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8a95a5}
+.now{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.now .url{background:var(--soft);font-size:12px;padding:6px 10px;color:var(--ink2);display:flex;gap:6px;align-items:center}
+.now .pg{padding:12px;display:flex;flex-direction:column;gap:7px}
+.now .pg i{display:block;height:7px;border-radius:4px;background:#e8eef5}
+.now .pg i.hl{background:#FFE7A8}
+.kv{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px dashed var(--line)}.kv:last-child{border:0}
+.kv span:first-child{color:var(--gray)}
+
+
+.scrim{position:absolute;inset:0;background:rgba(13,43,82,.38);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center}
+.dlg{width:560px;background:#fff;border-radius:20px;box-shadow:0 24px 60px rgba(13,43,82,.30);overflow:hidden}
+.dh{padding:22px 24px 0;display:flex;gap:14px;align-items:flex-start}
+.dh .big{width:44px;height:44px;border-radius:12px;background:#FDECEB;color:var(--red);display:flex;align-items:center;justify-content:center;flex:none}
+.dh .big .ico{width:22px;height:22px}
+.dh h2{margin:0;font-size:19px;letter-spacing:-.015em}
+.dh p{margin:2px 0 0;color:var(--gray);font-size:13.5px}
+.files{margin:16px 24px 0;border:1px solid var(--line);border-radius:12px}
+.f{display:flex;align-items:center;gap:10px;padding:9px 12px;border-top:1px solid var(--line);font-size:13.5px}
+.f:first-child{border-top:0}
+.cb{width:16px;height:16px;border-radius:4px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.cb .ico{width:11px;height:11px;stroke-width:3}
+.f .p{color:#8a95a5;font-size:12px}
+.f .sz{margin-left:auto;color:var(--gray);font-size:12.5px}
+.facts4{margin:14px 24px 0;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px}
+.facts4 dt{color:var(--gray)}.facts4 dd{margin:0}
+.dnote{margin:16px 24px 0;background:var(--soft);border-radius:10px;padding:9px 12px;font-size:12.5px;color:var(--ink2);display:flex;gap:8px;align-items:center}
+.dfoot{display:flex;gap:8px;align-items:center;padding:18px 24px 20px}
+.dfoot .exp{font-size:12px;color:#8a95a5;margin-right:auto;display:flex;align-items:center;gap:6px}
+
+
+.rw{flex:1;overflow:hidden;padding:22px 24px;display:flex;justify-content:center}
+.rc{width:900px;padding:22px 26px;display:flex;flex-direction:column;align-self:flex-start}
+.rh{display:flex;gap:14px;align-items:flex-start}
+.rh h2{margin:0;font-size:21px;letter-spacing:-.02em}
+.review{display:flex;align-items:center;gap:10px;background:#FFF8E8;border-radius:12px;padding:10px 14px;margin:14px 0 6px;font-size:13px;color:#6B4A00}
+.review .btn{padding:6px 12px;font-size:12.5px}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
+th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:#8a95a5;font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:8px 10px;border-bottom:1px solid var(--line);color:var(--ink2)}
+td:first-child{font-weight:600;color:var(--navy)}
+tr.pick td{background:#FFF5F4}
+sup{color:var(--blue);font-weight:600;font-size:10px;margin-left:2px}
+.yes{color:var(--green);font-weight:600}.no{color:#a3adbb}
+.rec{margin-top:14px;display:flex;gap:12px;font-size:13.5px}
+.rec .av{width:26px;height:26px;font-size:12px;border-radius:8px}
+.srcrow{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px}
+.srcrow .s{border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:var(--ink2)}
+.srcrow .s b{color:var(--blue);margin-right:4px}
+.acts{margin-top:16px;padding-top:0;display:flex;gap:8px;align-items:center}
+
+
+.sw{flex:1;display:flex;min-height:0}
+.snav{width:200px;flex:none;padding:20px 12px;border-right:1px solid var(--line)}
+.snav .item{margin-bottom:2px}
+.sc{flex:1;padding:20px 26px;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-content:start;overflow:hidden}
+.sc .card{padding:18px 20px}
+.sc h3{margin:0 0 2px;font-size:15px;display:flex;align-items:center;gap:8px}
+.sc .d{color:var(--gray);font-size:12.5px;margin:0 0 12px}
+.prov{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:13.5px}
+.prov:first-of-type{border-top:0}
+.pl{width:30px;height:30px;border-radius:8px;background:var(--soft);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--ink2);flex:none}
+.prov .n{flex:1}.prov .n div{font-size:12px;color:var(--gray)}
+.btn.sm{padding:5px 11px;font-size:12.5px;border-radius:8px}
+.rule{display:flex;gap:10px;padding:7px 0;font-size:13px;align-items:flex-start}
+.rule .ico{width:15px;height:15px;margin-top:2px;flex:none}
+.always{display:flex;align-items:center;gap:12px;background:#F2FAF6;border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.always .ico{color:var(--green);width:22px;height:22px}
+.lockpill{white-space:nowrap;flex:none;margin-left:auto;display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#157A52;background:#fff;border-radius:999px;padding:3px 10px}
+.toggle{width:34px;height:20px;border-radius:999px;background:var(--navy);position:relative;flex:none}.toggle::after{content:"";position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff}
+.chatapp{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line);font-size:13.5px;color:#7d889a}.chatapp b{color:#5B6575}
+.chatapp:first-of-type{border-top:0}
+.grp{font-size:11.5px;font-weight:600;color:#8a95a5;text-transform:uppercase;letter-spacing:.05em;margin:10px 0 2px}
+
+html,body{overflow:auto}
+.win{min-width:1120px;min-height:720px}
+button{font:inherit;color:inherit;cursor:pointer}
+.btn,.item,.chip,.newbtn,.opt,.seg span,.send,.taskchip,.toast a,.link{cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s,color .12s,transform .12s}
+.btn:hover{background:var(--soft)}.btn:active{transform:translateY(1px)}
+.btn.pri:hover{background:#D63A31}.btn.navy:hover{background:#0A2242}
+.btn.ghost:hover{background:var(--soft);color:var(--navy)}
+.btn[disabled]{opacity:.45;cursor:not-allowed;transform:none}
+.item:hover{background:#F3F6FA}.item.on:hover{background:var(--soft)}
+.item.dim:hover{background:transparent}
+.newbtn:hover{background:#D63A31}
+.chip:hover{border-color:#b9c5d4;background:#FAFCFE}
+.send{border:0}.send:hover{background:#D63A31}
+:focus{outline:none}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:10px}
+.titlebar .mock{display:flex;gap:10px;align-items:center;border:0;padding:0}
+.titlebar .mock span{border:1px dashed #c5cfdb;border-radius:6px;padding:1px 7px}
+.link{color:var(--blue);font-weight:600;background:none;border:0;padding:0;font-size:inherit}
+.link:hover{text-decoration:underline}
+@keyframes fadein{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+.fadein{animation:fadein .26s ease-out both}
+@keyframes spin{to{transform:rotate(360deg)}}
+.si.run{animation:spin .9s linear infinite}
+.si{transition:background .3s,border-color .3s}
+.st .tx b,.st .tx .d{transition:color .3s}
+.st.run{background:linear-gradient(90deg,rgba(30,136,229,.05),transparent 70%);margin:0 -12px;padding-left:12px;padding-right:12px;border-radius:10px}
+.si.skip{background:var(--soft);color:#8a95a5}.si.wait{background:#FFF4DC;color:var(--amber)}.si.stopped{background:var(--soft);color:var(--gray)}
+.tag.skip,.tag.stopped{background:var(--soft);color:var(--gray)}.tag.wait{background:#FFF4DC;color:#8A5A00}
+.bigbar i{transition:width .45s ease}
+.prog i{transition:width .45s ease}
+.dot.stop{background:#8a95a5}
+.thread{overflow-y:auto;scroll-behavior:smooth}
+.box{transition:border-color .15s,box-shadow .15s}
+.box:focus-within{border-color:var(--navy);box-shadow:0 0 0 3px rgba(13,43,82,.08),0 2px 10px rgba(13,43,82,.06)}
+.box textarea{width:100%;border:0;resize:none;font:inherit;font-size:14.5px;color:var(--navy);background:transparent;padding:4px 0 10px;max-height:140px;line-height:1.5}
+.box textarea:focus-visible{outline:none}
+.box textarea::placeholder{color:#9aa5b4}
+.hintk{font-size:11.5px;color:#9aa5b4;margin-left:auto;margin-right:6px}
+.typing{display:inline-flex;gap:4px;padding:8px 0}.typing i{width:7px;height:7px;border-radius:50%;background:#b8c4d3;animation:bob 1s infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes bob{0%,60%,100%{transform:none;opacity:.6}30%{transform:translateY(-4px);opacity:1}}
+.caret{display:inline-block;width:2px;height:1em;background:var(--red);vertical-align:-2px;margin-left:1px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.taskchip:hover{filter:brightness(.97)}
+.taskchip.wait{background:#FFF4DC;color:#7A5200}.taskchip.stopped{background:var(--soft);color:var(--gray)}.taskchip.done{background:#E7F5EE;color:#145C40}
+.taskchip .spin{animation:spin 2.4s linear infinite}
+.empty{text-align:center;padding:90px 0 0}
+.empty h2{font-size:28px;letter-spacing:-.02em;margin:0 0 6px}
+.empty .chips{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:18px}
+.empty .chip{padding:8px 14px;font-size:13.5px}
+.onb{display:inline-flex;gap:8px;align-items:center;background:#E6F0FB;color:#1565C0;border-radius:999px;padding:4px 12px;font-size:12.5px;font-weight:600;margin-bottom:16px}
+.warnbox{display:flex;gap:10px;align-items:center;background:#FFF8E8;color:#6B4A00;border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:10px}
+.tw{grid-template-columns:1fr 320px}
+.tcard{overflow:hidden}
+.rp{min-height:0}
+.logp{flex:1;min-height:0;display:flex;flex-direction:column}
+.log{overflow-y:auto;flex:1;font-size:12.5px;margin:0;padding:0;list-style:none}
+.log li{display:flex;gap:8px;padding:5px 0;border-top:1px dashed var(--line);color:var(--ink2)}
+.log li:first-child{border-top:0}
+.log time{color:#9aa5b4;flex:none;white-space:nowrap;min-width:72px}
+.log li.you{color:var(--navy);font-weight:600}
+@keyframes shimmer{0%{background-position:-200px 0}100%{background-position:200px 0}}
+.now .pg i{background:linear-gradient(90deg,#e8eef5 0,#f4f7fa 50%,#e8eef5 100%);background-size:400px 100%;animation:shimmer 1.4s linear infinite}
+.now .pg i.hl{background:#FFE7A8;animation:none}
+.now.idle .pg i{animation:none}
+.waitbar{display:flex;gap:10px;align-items:center;background:#FFF4DC;color:#6B4A00;border-radius:12px;padding:10px 14px;font-size:13px;margin-top:14px}
+.stopbar{display:flex;gap:10px;align-items:center;background:var(--soft);color:var(--ink2);border-radius:12px;padding:10px 14px;font-size:13px;margin-top:14px}
+.scrim{z-index:50;animation:fade .18s ease-out}
+@keyframes fade{from{opacity:0}}
+.dlg{position:relative;animation:pop .22s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes pop{from{opacity:0;transform:scale(.96) translateY(6px)}}
+.f label{display:flex;align-items:center;gap:10px;flex:1;cursor:pointer}
+.f input{appearance:none;width:16px;height:16px;border-radius:4px;border:2px solid #b9c5d4;margin:0;flex:none;display:grid;place-content:center;cursor:pointer;transition:all .12s}
+.f input:checked{background:var(--navy);border-color:var(--navy)}
+.f input:checked::after{content:"";width:8px;height:4px;border:2px solid #fff;border-top:0;border-right:0;transform:rotate(-45deg) translate(1px,-1px)}
+.f.off span.n{color:#9aa5b4;text-decoration:line-through}
+.dlg textarea{width:calc(100% - 48px);margin:10px 24px 0;border:1px solid #cfd8e3;border-radius:10px;padding:10px 12px;font:inherit;font-size:13.5px;min-height:80px;resize:vertical;color:var(--navy)}
+.dlg textarea:focus{border-color:var(--navy);box-shadow:0 0 0 3px rgba(13,43,82,.08)}
+.dclose{position:absolute;right:14px;top:14px;border:0;background:none;color:#9aa5b4;width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center}
+.dclose:hover{background:var(--soft);color:var(--navy)}
+.nosel{font-size:12px;color:var(--red);margin:8px 24px 0}
+.toasts{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;align-items:center;z-index:80;pointer-events:none}
+.toast{pointer-events:auto;background:var(--navy);color:#fff;border-radius:12px;padding:10px 16px;font-size:13.5px;box-shadow:0 10px 30px rgba(13,43,82,.3);display:flex;gap:12px;align-items:center;animation:toastin .25s ease-out;white-space:nowrap}
+.toast a{color:#9fd0ff;font-weight:600}
+.toast.out{opacity:0;transform:translateY(6px);transition:all .25s}
+@keyframes toastin{from{opacity:0;transform:translateY(10px)}}
+.opt{cursor:pointer}.opt:hover:not(.sel){box-shadow:0 0 0 1px #b9c5d4,0 4px 14px rgba(13,43,82,.06)}
+.seg span:hover:not(.on){background:var(--soft)}
+.inp{padding:0 12px}.inp input{flex:1;border:0;background:transparent;font:inherit;font-size:14px;color:var(--ink2);padding:9px 0;letter-spacing:.02em;min-width:0}
+.inp:focus-within{border-color:var(--navy);box-shadow:0 0 0 3px rgba(13,43,82,.08)}
+.inp .show{cursor:pointer;background:none;border:0}
+.err{color:var(--red);font-size:12.5px;margin-top:8px}
+.spinner{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:spin .8s linear infinite;display:inline-block}
+.spinner.dark{border-color:#cfe0f5;border-top-color:var(--blue)}
+.folder{width:620px;padding:26px}
+.path{display:flex;align-items:center;gap:12px;border:1px solid #cfd8e3;border-radius:12px;padding:14px 16px;font-size:15px;font-weight:600;margin:16px 0 8px;background:#fff}
+.path .ico{width:22px;height:22px;color:var(--blue)}
+.back{position:absolute;left:24px;top:20px}
+.sc{overflow-y:auto;padding-bottom:30px}
+.sc .card{scroll-margin:20px;transition:box-shadow .4s}
+.sc .card.flash{box-shadow:0 0 0 2px var(--blue),0 6px 20px rgba(30,136,229,.15)}
+.toggle{border:0;cursor:pointer;transition:background .2s;padding:0}.toggle::after{transition:all .2s}
+.toggle.offt{background:#c5cfdb}.toggle.offt::after{right:16px}
+select{font:inherit;font-size:12.5px;font-weight:600;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:#fff;color:var(--navy);cursor:pointer}
+.addkey{display:flex;gap:6px;margin:0 0 10px 40px}
+.addkey .inp{flex:1}
+.offline-strip{background:var(--navy);color:#fff;font-size:12px;font-weight:600;text-align:center;padding:4px 0;display:flex;gap:8px;justify-content:center;align-items:center}
+.dlbar{height:4px;border-radius:2px;background:var(--soft);margin-top:6px;overflow:hidden;width:160px}.dlbar i{display:block;height:100%;background:var(--blue);transition:width .3s}
+</style></head>
+<body><h1 style="position:absolute;left:-9999px">Heybe clickable design prototype with sample content</h1><div class="win" id="win">
+<div class="titlebar"><div class="lights"><i></i><i></i><i></i></div><a class="backlink" href="/" title="Back to heybe.dev">← heybe.dev · design prototype</a><div class="t">Heybe</div>
+<div class="mock"><button class="link" id="restart" title="Start over from the welcome screen">Restart demo</button><span>Prototype · sample content</span></div></div>
+<div id="strip"></div>
+<div class="body" id="body"></div>
+<div class="toasts" id="toasts"></div>
+<div id="modal"></div>
+</div>
+<script>
+const I={"plus": "<path d=\"M12 5v14M5 12h14\"/>", "chat": "<path d=\"M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z\"/>", "gear": "<circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z\"/>", "shield": "<path d=\"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z\"/>", "shieldok": "<path d=\"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z\"/><path d=\"M9 12l2 2 4-4\"/>", "brain": "<path d=\"M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 0V7a3 3 0 0 0-3-3zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 0\"/>", "folder": "<path d=\"M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/>", "send": "<path d=\"M5 12h14M13 6l6 6-6 6\"/>", "stop": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/>", "check": "<path d=\"M5 12l5 5 9-10\"/>", "clip": "<path d=\"M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7\"/>", "globe": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18\"/>", "file": "<path d=\"M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z\"/><path d=\"M14 3v6h6\"/>", "trash": "<path d=\"M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3\"/>", "lock": "<rect x=\"5\" y=\"11\" width=\"14\" height=\"10\" rx=\"2\"/><path d=\"M8 11V7a4 4 0 0 1 8 0v4\"/>", "key": "<circle cx=\"8\" cy=\"15\" r=\"4\"/><path d=\"M11 12l9-9M17 6l3 3\"/>", "phone": "<rect x=\"7\" y=\"2\" width=\"10\" height=\"20\" rx=\"2\"/><path d=\"M11 18h2\"/>", "clock": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/>", "ext": "<path d=\"M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5\"/>", "download": "<path d=\"M12 4v11M7 10l5 5 5-5M5 20h14\"/>", "copy": "<rect x=\"9\" y=\"9\" width=\"11\" height=\"11\" rx=\"2\"/><path d=\"M5 15V5a1 1 0 0 1 1-1h10\"/>", "edit": "<path d=\"M4 20h4L19 9l-4-4L4 16z\"/>", "x": "<path d=\"M6 6l12 12M18 6L6 18\"/>", "cpu": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4\"/>", "cloud": "<path d=\"M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19.5 10 4 4 0 0 1 18 18z\"/>", "eye": "<path d=\"M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>", "spark": "<path d=\"M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6\"/>"};
+const ic=(n,s='')=>`<svg class="ico" viewBox="0 0 24 24" style="${s}" aria-hidden="true">${I[n]}</svg>`;
+const $=s=>document.querySelector(s);
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const clock=()=>new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',second:'2-digit'});
+let uid=1;const nid=p=>p+(uid++);
+const PROV={deepseek:'DeepSeek',openai:'OpenAI',claude:'Claude',other:'Other service'};
+const S={
+ view:'welcome',wstep:1,source:'online',provider:'deepseek',wkey:{deepseek:'sk-demo-key-0000a1b2',openai:'',claude:'',other:''},wshow:false,wbusy:'',werr:'',safeReady:false,
+ firstDone:false,
+ chats:[
+  {id:'c-w',title:'Weekly update from notes',msgs:[{id:'m-w1',role:'user',text:'Turn these meeting notes into a weekly update.'},{id:'m-w2',role:'bot',full:"Here's your weekly update:\n\nDecided: launch the new pricing page on Nov 3. To do: Maya finishes the FAQ by Friday; Sam sends the customer survey. Open question: do we keep the free plan?",done:true}]},
+  {id:'c-s',title:'Summarize this article',msgs:[{id:'m-s1',role:'user',text:'Summarize this article in three sentences.'},{id:'m-s2',role:'bot',full:"The article says remote teams write more but meet less. Teams that keep one shared weekly note report fewer missed deadlines. The author suggests a 15-minute Friday wrap-up.",done:true}]},
+  {id:'c-p',title:'Plan a weekend in Portland',msgs:[{id:'m-p1',role:'user',text:'Plan a relaxed weekend in Portland for two.'},{id:'m-p2',role:'bot',full:"Saturday: coffee in the Pearl District, Powell's Books, then the Japanese Garden. Sunday: the farmers market downtown and a walk along the waterfront.",done:true}]}
+ ],
+ active:null,task:null,curTask:null,modalOpen:false,draft:'',folder:null,
+ oldTasks:[{id:'t-old1',title:'Tidy up Downloads',when:'yesterday',sum:'Sorted 42 files into 5 folders. Nothing was deleted.'},{id:'t-old2',title:'Monitor price check',when:'on Monday',sum:'Checked 3 stores. Lowest price: $269 — not below your $250 target yet.'}],
+ set:{monthly:'10',perTask:'1',offline:false,def:'deepseek',prov:{deepseek:{st:'on',mask:'sk-…a1b2'},openai:{st:'none'},claude:{st:'none'}},open:null,busy:null,err:'',local:0,sec:'ai'},
+ reviewed:false
+};
+function toast(msg,actLabel,act){const el=document.createElement('div');el.className='toast';el.innerHTML=`<span>${msg}</span>`+(actLabel?`<a href="#">${actLabel}</a>`:'');
+ if(actLabel)el.querySelector('a').onclick=e=>{e.preventDefault();act();el.remove()};
+ $('#toasts').appendChild(el);setTimeout(()=>{el.classList.add('out');setTimeout(()=>el.remove(),300)},3600)}
+function taskDot(t){return {running:'run',waiting:'wait',stopped:'stop',done:'ok'}[t.status]}
+function sidebar(){
+ const t=S.task;
+ let h=`<aside class="side"><div class="logo">Heybe<span>•</span></div><button class="newbtn" data-act="newchat" title="New chat (⌘K)" style="border:0">${ic('plus')}New chat</button><div class="sec">Chats</div>`;
+ S.chats.forEach(c=>{h+=`<div class="item ${S.view==='chat'&&S.active===c.id?'on':''}" tabindex="0" data-chat="${c.id}">${ic('chat')}<span class="grow">${esc(c.title)}</span></div>`});
+ h+=`<div class="sec">Tasks</div>`;
+ if(t){const pill={running:['Working','#E6F0FB','#1565C0'],waiting:['Needs you','#FFF4DC','#8A5A00'],stopped:['Stopped','#EEF3F9','#5B6575']}[t.status];
+  h+=`<div class="item ${S.view==='task'&&S.curTask===t.id?'on':''}" tabindex="0" data-task="${t.id}"><span class="dot ${taskDot(t)}"></span><span class="grow">${esc(t.title)}</span>${pill?`<span class="soon" style="background:${pill[1]};color:${pill[2]}">${pill[0]}</span>`:''}</div>`}
+ S.oldTasks.forEach(o=>{h+=`<div class="item ${S.view==='task'&&S.curTask===o.id?'on':''}" tabindex="0" data-task="${o.id}"><span class="dot ok"></span><span class="grow">${o.title}</span></div>`});
+ h+=`<div class="foot"><div class="item dim" data-act="memory" title="Coming in v1.1">${ic('brain')}<span class="grow">Memory</span><span class="soon">v1.1</span></div>
+ <div class="item ${S.view==='settings'?'on':''}" tabindex="0" data-act="settings">${ic('gear')}<span class="grow">Settings</span></div>
+ <div class="item small" style="color:#157A52" data-act="safety" tabindex="0" title="See what Heybe can and can't do">${ic('shieldok')}<span class="grow">Safe space on</span></div></div></aside>`;
+ return h;
+}
+function renderSide(){const s=$('.side');if(s)s.outerHTML=sidebar()}
+function strip(){$('#strip').innerHTML=S.set.offline&&S.view!=='welcome'?`<div class="offline-strip">${ic('cpu','width:13px;height:13px')}Only on this computer · offline <button class="link" style="color:#9fd0ff" data-act="settings">Change</button></div>`:''}
+function go(view,arg){
+ S.view=view;
+ if(view==='chat'){if(arg)S.active=arg;if(!S.active||!curChat())newChat(true)}
+ if(view==='task')S.curTask=arg||S.curTask;
+ strip();
+ const b=$('#body');
+ if(view==='welcome'){rw();return}
+ b.innerHTML=sidebar()+'<div class="main" id="main"></div>';
+ ({chat:chatView,task:taskView,settings:settingsView})[view]();
+}
+function prep(){return `<span class="prep">${S.safeReady?`<span class="dot ok"></span>Safe space ready`:`<span class="pulse"></span>Getting the safe space ready…`}</span>`}
+function welcome(){
+ if(S.wstep===2)return `<div class="wel fadein" style="position:relative">
+ <button class="btn ghost back" data-w="back">← Back</button>
+ <div class="steps"><span><b>✓</b>Choose your AI</span><span class="bar"></span><span class="on"><b>2</b>Give it a folder</span><span class="bar"></span><span><b>3</b>Say hello</span></div>
+ <div class="card folder"><h2 style="margin:0 0 4px;font-size:24px;letter-spacing:-.02em">Give Heybe a folder to work in</h2>
+ <p class="muted" style="margin:0">It can only read and write inside this folder. Your other files are off-limits.</p>
+ <div class="path">${ic('folder')}<span>${S.folder||'~/Heybe'}</span><span class="badge" style="margin-left:auto">${ic('shieldok','width:13px;height:13px')}Safe space</span></div>
+ <div class="small muted">We'll create it if it doesn't exist yet. If Heybe ever needs a file outside it, it asks you first.</div>
+ <div style="display:flex;gap:8px;margin-top:20px;justify-content:flex-end"><button class="btn" data-w="choose">Choose another…</button><button class="btn pri" data-w="usefolder" id="usefolder">Use this folder ${ic('send')}</button></div></div>
+ <div class="footbar" style="width:620px;justify-content:center">${prep()}</div></div>`;
+ const online=S.source==='online',p=S.provider;
+ const keyBlock=`<div class="lbl"><span>Your ${PROV[p]} access key</span><a href="#" data-w="where">Where do I get one? ${ic('ext','width:12px;height:12px;vertical-align:-1px')}</a></div>
+  <div class="inp">${ic('key','color:#8a95a5')}<input id="wkey" type="${S.wshow?'text':'password'}" placeholder="Paste your key here" value="${esc(S.wkey[p])}" autocomplete="off" spellcheck="false"><button class="show" data-w="show">${S.wshow?'Hide':'Show'}</button></div>
+  <div class="hint">${ic('lock','width:13px;height:13px;margin-top:2px')}<span>${p==='deepseek'?'A sample key is filled in for this demo. ':''}An access key is a code from your AI service, like a membership number. It's saved only in this Mac's Keychain.</span></div>`;
+ return `<div class="wel fadein">
+<div class="steps"><span class="on"><b>1</b>Choose your AI</span><span class="bar"></span><span><b>2</b>Give it a folder</span><span class="bar"></span><span><b>3</b>Say hello</span></div>
+<h1>Say it once. Heybe handles the rest.</h1>
+<p class="lead">Let's take a minute to get you set up.</p>
+<div class="q">Where should Heybe's thinking come from?</div>
+<div class="opts">
+ <div class="card opt ${online?'sel':''}" data-w="online" tabindex="0" role="radio" aria-checked="${online}"><div class="radio"></div>
+  <h3>${ic('cloud')}Use an online AI service <span class="badge blue" style="margin-left:4px">Recommended</span></h3>
+  <p class="d">Smartest answers. You pay the service for what you use, usually a few cents a task.</p>
+  <div class="seg">${['deepseek','openai','claude','other'].map(k=>`<span class="${online&&p===k?'on':''}" data-prov="${k}" tabindex="0">${k==='other'?'Other':PROV[k]}${k==='deepseek'?'<em>default</em>':''}</span>`).join('')}</div>
+  ${online?keyBlock:`<div class="small muted">Pick a service above to use it instead.</div>`}
+  ${online&&S.werr?`<div class="err">${S.werr}</div>`:''}
+ </div>
+ <div class="card opt ${!online?'sel':''}" data-w="local" tabindex="0" role="radio" aria-checked="${!online}"><div class="radio"></div>
+  <h3>${ic('cpu')}Run on this computer</h3>
+  <p class="d">Works offline. Nothing you type leaves this Mac.</p>
+  <ul class="facts"><li>${ic('download')}One-time download, about 4.7 GB</li><li>${ic('clock')}Slower answers, especially on older Macs</li><li>${ic('globe')}Can't look things up on the web</li></ul>
+  <div class="warn">Your Mac has 16 GB of memory — this will work fine.</div>
+ </div>
+</div>
+<div class="footbar">
+ <div class="safe">${ic('shieldok')}<span><b>Heybe works in a safe space.</b> <span class="muted">It can only touch the folder you give it — never the rest of your files.</span></span></div>
+ <button class="btn pri" id="wgo" data-w="go" style="padding:11px 22px;font-size:14.5px" ${S.wbusy?'disabled':''}>${S.wbusy?`<span class="spinner"></span>${S.wbusy}`:(online?'Connect &amp; continue ':'Continue ')+ic('send')}</button>
+</div>
+<div class="footbar" style="margin-top:12px"><span class="small muted">You can change this anytime in Settings.</span>${prep()}</div>
+</div>`;
+}
+function rw(){$('#body').innerHTML=welcome();const k=$('#wkey');if(k)k.oninput=()=>{S.wkey[S.provider]=k.value.trim();if(S.werr){S.werr='';const e=document.querySelector('.opt .err');e&&e.remove()}}}
+function welcomeClick(el){
+ const w=el.dataset.w,pv=el.dataset.prov;
+ if(pv){S.source='online';S.provider=pv;S.werr='';rw();if(pv!=='deepseek')setTimeout(()=>$('#wkey')&&$('#wkey').focus(),30);return true}
+ if(!w)return false;
+ if(S.wbusy)return true;
+ if(w==='online'){if(S.source!=='online'){S.source='online';rw()}}
+ else if(w==='local'){if(S.source!=='local'){S.source='local';rw()}}
+ else if(w==='show'){S.wshow=!S.wshow;rw()}
+ else if(w==='where'){toast(`In the app, this opens ${PROV[S.provider]}'s own page for getting a key.`)}
+ else if(w==='go'){
+  if(S.source==='online'){const key=(S.wkey[S.provider]||'').trim();
+   if(!key){S.werr='Paste your access key to continue.';rw();$('#wkey').focus();return true}
+   if(key.length<8){S.werr="That key doesn't look right. Check that you copied all of it, or make a new one with the service.";rw();return true}
+   S.wbusy='Trying to connect…';rw();
+   setTimeout(()=>{S.wbusy='';const p=S.provider;if(p in S.set.prov){S.set.prov[p]={st:'on',mask:'sk-…'+key.slice(-4)};S.set.def=p}
+    toast(`Connected to ${PROV[p]} ✓ Your key is saved only in this Mac's Keychain.`);S.wstep=2;rw()},1300)}
+  else{S.wbusy='Starting download…';rw();setTimeout(()=>{S.wbusy='';S.set.offline=true;S.set.local=100;toast('Download continues in the background (skipped in this demo).');S.wstep=2;rw()},1100)}
+ }
+ else if(w==='back'){S.wstep=1;rw()}
+ else if(w==='choose'){S.folder=S.folder?null:'~/Documents/Heybe';rw();toast('In the app, a folder picker opens here.')}
+ else if(w==='usefolder'){S.wstep=3;S.active=null;go('chat')}
+ return true;
+}
+function curChat(){return S.chats.find(c=>c.id===S.active)}
+function newChat(silent){const c={id:nid('c-'),title:'New chat',msgs:[]};S.chats.unshift(c);S.active=c.id;if(!silent)go('chat')}
+function provLabel(){return S.set.offline?'On this computer · offline':`${PROV[S.set.def]||'No service'} · online`}
+function chatView(){
+ const c=curChat();
+ $('#main').innerHTML=`<div class="top"><h1 id="ctitle">${esc(c.title)}</h1><span class="badge">${ic('shieldok','width:13px;height:13px')}Safe space</span><span style="margin-left:auto" class="small muted">${provLabel()}</span></div>
+ <div class="thread" id="thread"><div class="col" id="msgs"></div></div>
+ <div class="composer"><div class="col"><div id="cwarn"></div>
+ <div class="box"><textarea id="inp" rows="1" placeholder="Hand off something, or just ask…" aria-label="Message Heybe"></textarea>
+ <div class="row"><button class="chip" data-act="attach">${ic('clip','width:13px;height:13px')}Add file</button><button class="chip" data-act="web">${ic('globe','width:13px;height:13px')}Look it up online</button><span class="hintk">⏎ send · ⇧⏎ new line · ⌘K new chat</span><button class="send" id="send" aria-label="Send" title="Send (Enter)">${ic('send')}</button></div></div>
+ <div class="under">Heybe asks before it deletes or replaces anything. It can make mistakes — check important facts.</div></div></div>`;
+ const inp=$('#inp');
+ inp.value=S.draft||'';S.draft='';
+ inp.addEventListener('input',()=>{inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,140)+'px'});
+ inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send()}});
+ renderThread(true);
+ setTimeout(()=>inp.focus(),20);
+}
+function paras(t){return t.split('\n\n').map(p=>`<p>${esc(p)}</p>`).join('')}
+function chipHTML(t){
+ if(!t)return'';
+ const n=STEPS.length;
+ if(t.status==='done')return `<div class="taskchip done" data-task="${t.id}">${ic('check')}<span><b style="color:#145C40">Done</b> · ${t.title} · ${fmtDur(t.elapsed)}</span><span style="margin-left:auto;font-weight:600">Open the report →</span></div>`;
+ if(t.status==='waiting')return `<div class="taskchip wait" data-task="${t.id}">${ic('clock')}<span><b style="color:#6B4A00">Needs your OK</b> · Step ${t.i+1} of ${n} · delete 3 old drafts</span><span style="margin-left:auto;font-weight:600">Review →</span></div>`;
+ if(t.status==='stopped')return `<div class="taskchip stopped" data-task="${t.id}">${ic('stop','width:13px;height:13px;fill:currentColor')}<span><b>Stopped</b> · Step ${t.i+1} of ${n} · nothing else will run</span><span style="margin-left:auto;font-weight:600">Resume →</span></div>`;
+ return `<div class="taskchip" data-task="${t.id}">${ic('spark').replace('class="ico"','class="ico spin"')}<span><b>Working on it</b> · Step ${t.i+1} of ${n} · ${esc(t.now||'Getting started')}</span><span class="prog"><i style="width:${pct(t)}%"></i></span><span style="margin-left:auto;font-weight:600;color:var(--blue)">View task →</span></div>`;
+}
+function msgHTML(m){
+ const a=m.seen?'':' fadein';m.seen=true;
+ if(m.role==='user')return `<div class="msg me${a}"><div class="bubble">${esc(m.text)}</div></div>`;
+ let x='';
+ if(m.done){
+  if(m.plan)x+=`<div class="plan"><b>Here's my plan</b><ol>${STEPS.map(s=>`<li>${s.t}</li>`).join('')}</ol></div><p>In this demo it takes about 20 seconds. You can close the window — I'll keep working and let you know when it's done.</p>`;
+  if(m.task)x+=`<div class="chipslot" data-chip="${m.task}">${chipHTML(S.task&&S.task.id===m.task?S.task:null)}</div>`;
+  if(m.warn)x+=`<div class="warnbox">${ic('cpu')}<span>${m.warn}</span><button class="btn" style="margin-left:auto;padding:5px 10px" data-act="settings">Open Settings</button></div>`;
+  x+=`<div class="meta">${m.time||'Earlier'} · ${m.src||'DeepSeek (online)'}</div>`;
+  if(!m.xseen){x=`<div class="fadein">${x}</div>`;m.xseen=true}
+ }
+ const body=m.typing?`<div class="typing"><i></i><i></i><i></i></div>${m.slow?'<div class="small muted">The first answer takes a little longer…</div>':''}`:`<div id="mt-${m.id}">${paras(m.done?m.full:m.full.slice(0,m.n||0))}${m.done?'':'<span class="caret"></span>'}</div>`;
+ return `<div class="msg${a}"><div class="av">H</div><div class="reply">${body}${x}</div></div>`;
+}
+function renderThread(force){
+ const box=$('#msgs');if(!box)return;const c=curChat();
+ if(!c.msgs.length){box.innerHTML=`<div class="empty fadein">${S.firstDone?'':'<div class="onb">Step 3 of 3 · Say your first thing</div>'}<h2>What can I take off your plate?</h2><p class="muted" style="margin:0">Hand off a task, or just say hi. Try one of these:</p>
+  <div class="chips"><button class="chip" data-suggest="Compare 5 note apps for me">${ic('spark','width:13px;height:13px;color:var(--red)')}Compare 5 note apps for me</button><button class="chip" data-suggest="Summarize this web page for me">Summarize this web page</button><button class="chip" data-suggest="Explain inflation in three sentences">Explain something in 3 sentences</button></div></div>`;return}
+ box.innerHTML=c.msgs.map(msgHTML).join('');
+ const th=$('#thread');th.style.scrollBehavior=force?'auto':'smooth';th.scrollTop=th.scrollHeight;
+}
+function updateChips(){document.querySelectorAll('.chipslot').forEach(s=>{if(S.task&&s.dataset.chip===S.task.id)s.innerHTML=chipHTML(S.task)})}
+function send(text){
+ const inp=$('#inp');text=(text??(inp?inp.value:'')).trim();if(!text)return;
+ if(/\bsk-[A-Za-z0-9_-]{10,}/.test(text)){$('#cwarn').innerHTML=`<div class="warnbox fadein">${ic('key')}<span>This looks like an access key. Don't send it in chat — add it in Settings, where it's kept in your Keychain.</span><button class="btn" style="margin-left:auto;padding:5px 10px" data-act="settings">Open Settings</button></div>`;return}
+ if(/^\s*(yes|ok|okay|approve|可以)\s*$/i.test(text)&&S.task&&S.task.status==='waiting'){$('#cwarn').innerHTML=`<div class="warnbox fadein">${ic('lock')}<span>Typing "yes" doesn't count as approval. Please use the buttons on the request.</span><button class="btn" style="margin-left:auto;padding:5px 10px" data-act="review">Review request</button></div>`;return}
+ $('#cwarn').innerHTML='';
+ if(inp){inp.value='';inp.style.height='auto'}
+ const c=curChat();
+ c.msgs.push({id:nid('m'),role:'user',text});
+ if(c.title==='New chat'){c.title=text.length>28?text.slice(0,27)+'…':text;$('#ctitle').textContent=c.title;renderSide()}
+ const isTask=/note|compar/i.test(text);
+ let reply,extra={};
+ if(isTask&&S.set.offline){reply="Offline only is on, so I can't look things up on the web right now. Turn it off in Settings and I'll compare them for you.";extra={warn:'Offline only is on: web lookups are off.'}}
+ else if(isTask&&S.task&&['running','waiting','stopped'].includes(S.task.status)){reply="I'm already working on your note app comparison. Here's where it stands:";extra={task:S.task.id}}
+ else if(isTask){reply="Happy to. I'll check each app's own website so the info is current — Notion, Obsidian, Bear, Apple Notes and Evernote — then give you a side-by-side table with sources and my pick for you.";extra={plan:true,startTask:true}}
+ else{const s=text.length>60?text.slice(0,57)+'…':text;reply=`Got it: “${s}”.\n\nThis is a clickable demo, so I can only pretend to answer. To see a whole task from start to finish — plan, progress, a safety check, and the final report — try “Compare 5 note apps for me”.`}
+ const m={id:nid('m'),role:'bot',typing:true,full:reply,n:0,time:'Just now',src:S.set.offline?'this computer':`${PROV[S.set.def]} (online)`,...extra};
+ c.msgs.push(m);renderThread();
+ const first=!S.firstDone;
+ const slowT=first?setTimeout(()=>{m.slow=true;if(S.view==='chat'&&S.active===c.id&&m.typing)renderThread()},1000):0;
+ setTimeout(()=>{clearTimeout(slowT);m.typing=false;if(S.view==='chat'&&S.active===c.id)renderThread();stream(m,c)},first?1600:650);
+}
+function stream(m,c){
+ const iv=setInterval(()=>{
+  m.n=Math.min(m.full.length,m.n+3);
+  const el=document.getElementById('mt-'+m.id);
+  if(el)el.innerHTML=paras(m.full.slice(0,m.n))+'<span class="caret"></span>';
+  const th=$('#thread');if(th&&el){th.style.scrollBehavior='auto';th.scrollTop=th.scrollHeight}
+  if(m.n>=m.full.length){clearInterval(iv);m.done=true;S.firstDone=true;
+   if(m.startTask){startTask(c.id);m.task=S.task.id}
+   if(S.view==='chat'&&S.active===c.id)renderThread()}
+ },16);
+}
+const STEPS=[
+ {t:"Read each app's website and pricing page",dur:3600,urls:['notion.com/pricing','obsidian.md/pricing','bear.app/pro','support.apple.com/notes','evernote.com/compare-plans'],look:'Prices and plans for each app',fin:'Read 5 websites'},
+ {t:'Check offline use, phone app, and sync',dur:3000,urls:['notion.com/help/offline','obsidian.md/mobile','bear.app/faq/sync','support.apple.com/icloud','help.evernote.com/offline'],look:'Whether it works without internet and on your phone',fin:'5 of 5 apps checked'},
+ {t:'Look at how each one handles your data',dur:3000,urls:['notion.com/privacy','obsidian.md/privacy','bear.app/privacy','apple.com/privacy','evernote.com/privacy'],look:"Where your notes are stored, and whether they're encrypted",fin:'5 privacy pages read'},
+ {t:'Build a comparison table',dur:2400,local:'Putting it all side by side',look:'Price, offline, phone, data, best for',fin:'Table ready: 5 apps × 5 things'},
+ {t:'Clean up old drafts in your Reports folder',approval:true,look:'Your OK before anything is deleted'},
+ {t:'Write a recommendation and save the report',dur:2600,local:'Writing your recommendation',look:'Your needs: Mac + phone, price, privacy',fin:'Saved to ~/Heybe/Reports/note-apps-compared.md'}
+];
+const FILES=[{n:'note-apps-draft-1.md',sz:'4 KB · 2 days ago'},{n:'note-apps-draft-2.md',sz:'6 KB · 2 days ago'},{n:'note-apps (old).md',sz:'5 KB · last week'}];
+function pct(t){return Math.round(((t.status==='done'?STEPS.length:t.i+(t.status==='running'?t.sub:0))/STEPS.length)*100)}
+function fmtDur(ms){const s=Math.round(ms/1000);return s<60?`${s} s`:`${Math.floor(s/60)} min ${s%60} s`}
+function log(txt,you){S.task.log.unshift({t:clock(),txt,you})}
+function startTask(chatId){
+ S.task={id:nid('t-'),title:'Compare 5 note apps',chat:chatId,status:'running',i:0,sub:0,cost:0,elapsed:0,started:new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}),
+  states:STEPS.map((s,i)=>i?'next':'run'),details:STEPS.map(()=>''),sources:0,log:[],now:'Reading notion.com',url:'notion.com/pricing',appr:null,decision:null};
+ log('Started — you asked in chat');log('Step 1: '+STEPS[0].t);
+ S.reviewed=false;renderSide();
+}
+function tick(){
+ const t=S.task;if(!t)return;
+ if(S.modalOpen)refreshTask();
+ if(t.status!=='running')return;
+ const st=STEPS[t.i];const dur=st.approval?1200:st.dur;
+ t.elapsed+=200;t.sub=Math.min(1,t.sub+200/dur);t.cost+=0.0003+Math.random()*0.0004;
+ if(st.urls){const k=Math.min(st.urls.length-1,Math.floor(t.sub*st.urls.length));t.url=st.urls[k];t.now='Reading '+st.urls[k].split('/')[0];t.details[t.i]=`${t.now} — ${k+1} of 5`;if(t.i===0)t.sources=k+1}
+ else if(st.approval){t.now=t.decision.doing;t.details[t.i]=t.decision.doing;t.url='~/Heybe/Reports'}
+ else{t.now=st.local;t.details[t.i]=st.local+'…';t.url=t.i===5?'~/Heybe/Reports/note-apps-compared.md':'Working on this Mac'}
+ if(t.sub>=1)finishStep();
+ refreshTask();
+}
+function finishStep(){
+ const t=S.task,st=STEPS[t.i];
+ t.states[t.i]='ok';t.details[t.i]=st.approval?t.decision.fin:st.fin;
+ if(t.i===0)t.sources=5;
+ log(`Done: ${st.approval?t.decision.fin:st.t}`);
+ t.i++;t.sub=0;
+ if(t.i>=STEPS.length)return finishTask();
+ const nx=STEPS[t.i];
+ if(nx.approval&&!t.decision)askApproval();
+ else{t.states[t.i]='run';log(`Step ${t.i+1}: ${nx.t}`)}
+}
+function askApproval(){const t=S.task;t.states[t.i]='wait';t.status='waiting';t.now='Waiting for your OK';t.url='~/Heybe/Reports';t.details[t.i]='Wants to delete 3 old drafts — waiting for your OK';log('Asked you before deleting 3 old drafts');renderSide();openApproval()}
+function finishTask(){
+ const t=S.task;t.status='done';t.now='Done';t.cost=Math.max(t.cost,0.038);log(`Finished in ${fmtDur(t.elapsed)}`);
+ const c=S.chats.find(c=>c.id===t.chat);
+ if(c)c.msgs.push({id:nid('m'),role:'bot',full:"Done! I compared all 5 apps. My pick for you is Bear — cheap, works offline, and keeps your notes on your own devices. The full table and sources are in the report.",done:true,task:t.id,time:'Just now',src:`${PROV[S.set.def]} (online)`});
+ renderSide();
+ if(S.view==='task'&&S.curTask===t.id)go('task',t.id);
+ else{toast('Your note app comparison is ready.','Open report',()=>go('task',t.id));if(S.view==='chat'&&S.active===t.chat)renderThread()}
+}
+function stopTask(){const t=S.task;if(!t||!['running','waiting'].includes(t.status))return;
+ if(t.status==='waiting'){closeModal();t.appr=null}
+ t.states[t.i]='stopped';t.details[t.i]='Stopped by you — nothing else will run';t.status='stopped';t.now='Stopped';
+ log('You stopped the task. Nothing else will run.',true);toast('Stopped. Nothing else will run until you resume.');refreshTask();renderSide()}
+function resumeTask(){const t=S.task;if(!t||t.status!=='stopped')return;log('You resumed the task',true);
+ if(STEPS[t.i].approval&&!t.decision){askApproval();refreshTask();return}
+ t.states[t.i]='run';t.status='running';refreshTask();renderSide()}
+function taskView(){
+ const id=S.curTask;
+ const old=S.oldTasks.find(o=>o.id===id);
+ if(old){$('#main').innerHTML=`<div class="top"><h1>Tasks</h1><span class="muted">/ ${old.title}</span></div><div class="rw"><div class="card rc fadein"><div class="rh"><div style="flex:1"><h2>${old.title}</h2><div class="small muted" style="margin-top:3px">Finished ${old.when} · sample task</div></div><span class="badge">${ic('check','width:13px;height:13px')}Done</span></div><p style="margin:16px 0 0">${old.sum}</p></div></div>`;return}
+ const t=S.task;if(!t||t.id!==id){go('chat');return}
+ if(t.status==='done')return resultView();
+ $('#main').innerHTML=`<div class="top"><h1>Tasks</h1><span class="muted">/ ${t.title}</span><button class="link" style="margin-left:auto" data-chat="${t.chat}">Back to chat</button></div>
+<div class="tw fadein">
+<div class="card tcard">
+ <div class="thead"><div style="flex:1"><h2>${t.title}</h2><div class="sub" id="tsub"></div></div>
+ <span class="badge">${ic('shieldok','width:13px;height:13px')}In safe space</span><span id="tctl"></span></div>
+ <div class="bigbar"><i id="tbar" style="width:${pct(t)}%"></i></div>
+ <div class="small muted" id="tinfo"></div>
+ <div id="tbanner"></div>
+ <ul class="steplist">${STEPS.map((s,i)=>`<li class="st" id="st${i}"><span class="si"></span><div class="tx"><b>${s.t}</b><div class="d"></div>${i===0?'<div class="srcs"></div>':''}</div><span class="tag"></span></li>`).join('')}</ul>
+ <div style="margin-top:auto;padding-top:14px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px" class="small muted">${ic('clock','width:14px;height:14px')}You can close the window. Heybe keeps working and tells you when it's done.</div>
+</div>
+<div class="rp">
+ <div class="card panel"><h4>Right now</h4><div class="now" id="now"><div class="url">${ic('globe','width:12px;height:12px')}<span id="nurl"></span></div><div class="pg"><i style="width:60%"></i><i></i><i class="hl" style="width:85%"></i><i style="width:70%"></i><i style="width:40%"></i></div></div>
+ <div class="small muted" style="margin-top:8px" id="nlook"></div></div>
+ <div class="card panel"><h4>This task</h4>
+  <div class="kv"><span>AI service</span><span>${PROV[S.set.def]}</span></div>
+  <div class="kv"><span>Cost so far</span><span><b id="tcost"></b> <span class="muted">est.</span></span></div>
+  <div class="kv"><span>Asks you if over</span><span>$${S.set.perTask}</span></div>
+  <div class="kv"><span>Can use</span><span>~/Heybe only</span></div></div>
+ <div class="card panel logp"><h4>Activity</h4><ul class="log" id="tlog"></ul></div>
+</div></div>`;
+ refreshTask();
+}
+const TAG={ok:'Done',run:'Working',next:'Up next',wait:'Needs you',skip:'Skipped',stopped:'Stopped'};
+const SI={ok:()=>ic('check'),wait:()=>ic('clock'),skip:()=>ic('x'),stopped:()=>ic('stop','fill:currentColor;width:11px;height:11px'),run:()=>'',next:()=>''};
+function refreshTask(){
+ updateChips();
+ const t=S.task;if(!t)return;
+ if(S.modalOpen&&t.appr){const e=$('#expt');if(e){const r=Math.max(0,t.appr.exp-Date.now()),m=Math.floor(r/60000),s=Math.floor(r%60000/1000);e.textContent=`Expires in ${m}:${String(s).padStart(2,'0')}`}}
+ if(S.view!=='task'||S.curTask!==t.id||!$('#tbar'))return;
+ $('#tbar').style.width=pct(t)+'%';
+ $('#tsub').textContent=`Started ${t.started} · from your chat · ${t.status==='stopped'?'stopped after':'running for'} ${fmtDur(t.elapsed)}`;
+ const left=Math.max(3,Math.round((STEPS.length-1-t.i-t.sub)*2.9));
+ $('#tinfo').textContent={running:`Step ${t.i+1} of ${STEPS.length} · about ${left} s left`,waiting:`Step ${t.i+1} of ${STEPS.length} · paused until you decide`,stopped:`Stopped at step ${t.i+1} of ${STEPS.length}`}[t.status]||'';
+ const ctl=t.status==='stopped'?`<button class="btn pri" data-act="resume">${ic('send','width:13px;height:13px')}Resume</button>`:`<button class="btn" data-act="stop" title="Stop the task">${ic('stop','width:13px;height:13px;fill:currentColor')}Stop</button>`;
+ if($('#tctl').dataset.k!==t.status){$('#tctl').innerHTML=ctl;$('#tctl').dataset.k=t.status}
+ const ban=t.status==='waiting'&&!S.modalOpen?`<div class="waitbar fadein">${ic('clock')}<span><b>Heybe is waiting for your OK</b> to delete 3 old drafts. Nothing happens until you decide.</span><button class="btn" style="margin-left:auto;padding:6px 12px" data-act="review">Review</button></div>`
+  :t.status==='stopped'?`<div class="stopbar fadein">${ic('stop','fill:currentColor;width:13px;height:13px')}<span>You stopped this task. Finished steps are kept; nothing else will run until you resume.</span></div>`:'';
+ const bk=t.status+(S.modalOpen?1:0);if($('#tbanner').dataset.k!==bk){$('#tbanner').innerHTML=ban;$('#tbanner').dataset.k=bk}
+ STEPS.forEach((s,i)=>{const li=$('#st'+i),stt=t.states[i];
+  if(li.dataset.s!==stt){li.dataset.s=stt;li.className='st '+stt;const si=li.querySelector('.si');si.className='si '+stt;si.innerHTML=SI[stt]();const tg=li.querySelector('.tag');tg.className='tag '+stt;tg.textContent=TAG[stt]}
+  const d=li.querySelector('.d');const dt=t.details[i]||(stt==='next'&&i===5?'Will save a new file to ~/Heybe/Reports — no need to ask':stt==='next'&&s.approval?'Will ask you first':'');if(d.textContent!==dt)d.textContent=dt;
+  if(i===0){const sc=li.querySelector('.srcs');if(sc.childElementCount!==t.sources)sc.innerHTML=STEPS[0].urls.slice(0,t.sources).map((u,k)=>`<span class="${k===t.sources-1?'fadein':''}">${u.split('/')[0]}</span>`).join('')}
+ });
+ if($('#nurl').textContent!==t.url)$('#nurl').textContent=t.url;
+ $('#now').classList.toggle('idle',t.status!=='running');
+ $('#nlook').textContent=t.status==='stopped'?'Stopped. Nothing is running.':'Looking for: '+STEPS[t.i].look;
+ $('#tcost').textContent='$'+t.cost.toFixed(3);
+ if($('#tlog').dataset.n!=t.log.length){$('#tlog').innerHTML=t.log.map(l=>`<li class="${l.you?'you':''}"><time>${l.t}</time><span>${esc(l.txt)}</span></li>`).join('');$('#tlog').dataset.n=t.log.length}
+}
+function openApproval(){
+ const t=S.task;if(!t||t.status!=='waiting')return;
+ if(!t.appr)t.appr={files:FILES.map(f=>({...f,on:true})),exp:Date.now()+30*60000,edit:false,note:"Don't delete them. Move them into an Archive folder instead."};
+ if(S.view==='task'&&S.curTask===t.id)$('#tbanner').dataset.k='';
+ S.modalOpen=true;drawModal();
+ setTimeout(()=>{const d=$('#deny');d&&d.focus()},40);
+}
+function drawModal(){
+ const a=S.task.appr,n=a.files.filter(f=>f.on).length;
+ const files=a.files.map((f,i)=>`<div class="f ${f.on?'':'off'}"><label><input type="checkbox" data-file="${i}" ${f.on?'checked':''} aria-label="Delete ${f.n}">${ic('file','color:#8a95a5')}<span class="n">${f.n} <span class="p">~/Heybe/Reports</span></span></label><span class="sz">${f.sz}</span></div>`).join('');
+ const exp=`<span class="exp">${ic('clock','width:13px;height:13px')}<span id="expt">Expires in 30:00</span></span>`;
+ const body=a.edit?`<div style="margin:16px 24px 0;font-size:13.5px"><b>Tell Heybe what to do instead</b><div class="muted small">It will follow your note. Nothing gets deleted.</div></div><textarea id="enote">${esc(a.note)}</textarea>
+  <div class="dfoot">${exp}<button class="btn" data-ap="back">Back</button><button class="btn navy" data-ap="sendedit">${ic('send','width:14px;height:14px')}Send changes</button></div>`
+ :`<div class="files">${files}</div>${n===0?`<div class="nosel">Nothing selected. Choose Deny if you want to keep all of them.</div>`:''}
+ <dl class="facts4"><dt>What happens</dt><dd>${n===0?'Nothing.':`${n===1?'This file moves':`These ${n} files move`} to your Mac's Trash. Nothing else is touched.`}</dd><dt>Can you undo it?</dt><dd>Yes — put them back from the Trash until you empty it.</dd><dt>Why</dt><dd>They're older drafts of this report, from earlier tries.</dd></dl>
+ <div class="dnote">${ic('lock','width:14px;height:14px')}Nothing happens until you click. Typing "yes" in the chat doesn't count.</div>
+ <div class="dfoot">${exp}<button class="btn" id="deny" data-ap="deny">${ic('x','width:14px;height:14px')}Deny</button><button class="btn" data-ap="edit">${ic('edit','width:14px;height:14px')}Edit</button><button class="btn pri" data-ap="approve" ${n?'':'disabled'}>${ic('check','width:14px;height:14px')}Approve${n&&n<3?` (${n})`:''}</button></div>`;
+ $('#modal').innerHTML=`<div class="scrim" data-ap="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgt"><button class="dclose" data-ap="dismiss" aria-label="Close and decide later" title="Decide later (Esc)">${ic('x')}</button>
+ <div class="dh"><div class="big">${ic('trash')}</div><div><h2 id="dlgt">Heybe wants to delete ${n} file${n===1?'':'s'}</h2><p>From your Heybe folder · for "${S.task.title}"</p></div></div>${body}</div></div>`;
+ refreshTask();
+}
+function closeModal(){S.modalOpen=false;$('#modal').innerHTML='';if(S.task)refreshTask()}
+function decide(kind){
+ const t=S.task,a=t.appr;if(!a)return;const on=a.files.filter(f=>f.on),off=a.files.filter(f=>!f.on);
+ const pl=k=>`${k} file${k>1?'s':''}`;
+ if(kind==='approve'){if(!on.length)return;
+  t.decision={doing:`Moving ${pl(on.length)} to Trash…`,fin:`Moved ${pl(on.length)} to Trash`+(off.length?` · kept ${off.map(f=>f.n).join(', ')}`:'')};
+  log(`You approved deleting ${on.length} of 3 files`+(off.length?` (kept ${off.length})`:''),true);t.states[t.i]='run';t.status='running';t.sub=0;toast(`Approved. Moving ${pl(on.length)} to Trash.`)}
+ else if(kind==='deny'){log('You said no — nothing was deleted',true);t.decision={fin:'Skipped'};
+  t.states[t.i]='skip';t.details[t.i]='Skipped — you said no. Nothing was deleted.';t.i++;t.sub=0;t.states[t.i]='run';t.status='running';log(`Step ${t.i+1}: ${STEPS[t.i].t}`);toast('Okay, nothing was deleted. Moving on.')}
+ else if(kind==='edit'){const el=$('#enote');const note=((el&&el.value)||'').trim()||a.note;log(`You changed the plan: “${note}”`,true);
+  t.decision={doing:'Following your note: moving drafts to ~/Heybe/Archive…',fin:'Moved 3 drafts to ~/Heybe/Archive — nothing deleted'};t.states[t.i]='run';t.status='running';t.sub=0;toast('Got it — following your note. Nothing gets deleted.')}
+ t.appr=null;closeModal();renderSide();
+}
+function dismiss(){if(!S.modalOpen)return;closeModal();log('You closed the request — still waiting, nothing was deleted');toast('Still waiting for your OK. Nothing was deleted.','Review',()=>openApproval());refreshTask()}
+function resultView(){
+ const t=S.task;
+ $('#main').innerHTML=`<div class="top"><h1>Tasks</h1><span class="muted">/ ${t.title}</span><button class="link" style="margin-left:auto" data-chat="${t.chat}">Back to chat</button></div>
+<div class="rw" style="overflow-y:auto"><div class="card rc fadein">
+ <div class="rh"><div style="flex:1"><h2>Note apps compared: Notion, Obsidian, Bear, Apple Notes, Evernote</h2><div class="small muted" style="margin-top:3px">Finished in ${fmtDur(t.elapsed)} · 12 sources · cost $${t.cost.toFixed(2)} · ${PROV[S.set.def]}</div></div><span class="badge">${ic('check','width:13px;height:13px')}Done</span></div>
+ <div id="rev">${S.reviewed?revDone():`<div class="review">${ic('eye','width:16px;height:16px')}<span><b>Ready for a quick look.</b> Saved as a new file in your Heybe folder.</span><span style="margin-left:auto;display:flex;gap:6px"><button class="btn" data-act="changes">Ask for changes</button><button class="btn navy" data-act="good">Looks good</button></span></div>`}</div>
+ <table id="rtable">
+  <tr><th>App</th><th>Price</th><th>Works offline</th><th>Mac + phone</th><th>Your data</th><th>Best for</th></tr>
+  <tr><td>Notion</td><td>Free · $10/mo Plus<sup>1</sup></td><td class="no">Limited</td><td class="yes">Yes</td><td>Stored on their servers</td><td>Team docs, planning</td></tr>
+  <tr><td>Obsidian</td><td>Free · sync $4/mo<sup>2</sup></td><td class="yes">Yes</td><td class="yes">Yes</td><td>Files on your device</td><td>Privacy, long notes</td></tr>
+  <tr class="pick"><td>Bear ★</td><td>Free · $2.99/mo Pro<sup>3</sup></td><td class="yes">Yes</td><td class="yes">Apple only</td><td>On device + iCloud</td><td>Fast writing on Apple</td></tr>
+  <tr><td>Apple Notes</td><td>Free<sup>4</sup></td><td class="yes">Yes</td><td class="yes">Apple only</td><td>iCloud, can lock notes</td><td>Quick notes, simple</td></tr>
+  <tr><td>Evernote</td><td>Free (limited) · $14.99/mo<sup>5</sup></td><td class="no">Paid plans</td><td class="yes">Yes</td><td>Stored on their servers</td><td>Clipping, scanning</td></tr>
+ </table>
+ <div class="rec"><div class="av">H</div><div><b>My pick for you: Bear.</b> You write on a Mac and phone and care about price and privacy — Bear is cheap, works offline, and keeps notes on your devices and iCloud. If you ever need Windows, go with Obsidian.</div></div>
+ <div class="srcrow"><span class="muted" style="margin-right:4px">Sources</span>${['notion.com/pricing','obsidian.md/pricing','bear.app/pro','support.apple.com','evernote.com/compare'].map((u,i)=>`<a class="s" href="#" data-src="${u}" style="text-decoration:none"><b>${i+1}</b>${u}</a>`).join('')}<button class="link" style="font-weight:500" data-act="more">+7 more</button></div>
+ <div class="acts"><button class="btn pri" data-act="open">${ic('file','width:14px;height:14px')}Open report</button><button class="btn" data-act="save">${ic('download','width:14px;height:14px')}Save a copy…</button><button class="btn" data-act="finder">${ic('folder','width:14px;height:14px')}Show in Finder</button><button class="btn ghost" data-act="copy">${ic('copy','width:14px;height:14px')}Copy table</button>
+ <span class="small muted" style="margin-left:auto;white-space:nowrap">Saved to <span class="kbd">~/Heybe/Reports/note-apps-compared.md</span></span></div>
+ <details style="margin-top:14px;font-size:12.5px;color:var(--gray)"><summary style="cursor:pointer;font-weight:600">What happened along the way (${t.log.length} updates)</summary><ul class="log" style="max-height:130px;margin-top:6px">${t.log.map(l=>`<li class="${l.you?'you':''}"><time>${l.t}</time><span>${esc(l.txt)}</span></li>`).join('')}</ul></details>
+</div></div>`;
+}
+const revDone=()=>`<div class="review fadein" style="background:#E7F5EE;color:#145C40">${ic('check','width:16px;height:16px')}<span><b>Marked as reviewed.</b> It's in your Reports folder.</span></div>`;
+function settingsView(){
+ const s=S.set;
+ const sec=(k,icn,label,dim)=>`<button class="item ${s.sec===k?'on':''} ${dim?'dim':''}" style="border:0;${s.sec===k?'':'background:none;'}width:100%;text-align:left" data-sec="${k}">${ic(icn)}<span class="grow">${label}</span>${dim?'<span class="soon">v1.1</span>':''}</button>`;
+ $('#main').innerHTML=`<div class="top"><h1>Settings</h1></div><div class="sw">
+<div class="snav">${sec('ai','cloud','AI service')}${sec('safety','shield','Safety')}${sec('folder','folder','Heybe folder')}${sec('apps','phone','Chat apps')}${sec('memory','brain','Memory',1)}${sec('about','spark','About')}</div>
+<div class="sc" id="sc"></div></div>`;
+ drawSettings();
+}
+function provRow(k,label,abbr){
+ const s=S.set,p=s.prov[k],on=p.st==='on',isDef=s.def===k;
+ let right=on?`${isDef?'':`<button class="btn sm" data-pk="default" data-p="${k}">Make default</button>`}<button class="btn sm" data-pk="change" data-p="${k}">Change</button>${isDef?'':`<button class="btn sm ghost" data-pk="disc" data-p="${k}">Disconnect</button>`}`:`<button class="btn sm" data-pk="add" data-p="${k}">Add key</button>`;
+ if(s.busy===k)right=`<span class="small muted" style="display:flex;gap:6px;align-items:center;white-space:nowrap"><span class="spinner dark"></span>Trying to connect…</span>`;
+ const sub=on?`${isDef?'Default · ':''}key ${p.mask} · in Keychain`:'Use your own access key';
+ let h=`<div class="prov"><div class="pl" ${on?'style="background:#E6F0FB;color:#1565C0"':''}>${abbr}</div><div class="n"><b>${label}</b> ${on?`<span class="badge ${s.offline?'gray':''}" style="margin-left:4px">${s.offline?'Paused':'Connected ✓'}</span>`:''}<div>${sub}</div></div>${right}</div>`;
+ if(s.open===k)h+=`<div class="addkey fadein"><div class="inp">${ic('key','color:#8a95a5')}<input id="pkey" type="password" placeholder="Paste your ${label} key" autocomplete="off"></div><button class="btn sm navy" data-pk="connect" data-p="${k}">Connect</button><button class="btn sm ghost" data-pk="cancel">Cancel</button></div>${s.err?`<div class="err" style="margin:-4px 0 8px 40px">${s.err}</div>`:''}`;
+ return h;
+}
+function drawSettings(){
+ const s=S.set,sc=$('#sc');if(!sc)return;const y=sc.scrollTop;
+ sc.innerHTML=`
+ <div class="card" id="sec-ai" style="grid-row:span 2">
+  <h3>${ic('cloud')}AI service</h3><p class="d">Where Heybe's thinking comes from. What you send goes to the service you pick.</p>
+  ${provRow('deepseek','DeepSeek','DS')}${provRow('openai','OpenAI','OA')}${provRow('claude','Claude','CL')}
+  <div class="prov"><div class="pl">${ic('cpu','width:15px;height:15px')}</div><div class="n"><b>Run on this computer</b><div>${s.local>=100?'Ready · works offline':s.local>0?`Downloading… ${s.local}% of 4.7 GB`:'Offline · 4.7 GB download'}</div>${s.local>0&&s.local<100?`<div class="dlbar"><i style="width:${s.local}%"></i></div>`:''}</div>${s.local>0?(s.local>=100?'<span class="badge">Ready ✓</span>':'<button class="btn sm" data-pk="pause">Pause</button>'):'<button class="btn sm" data-pk="local">Set up</button>'}</div>
+  <div class="grp">Spending</div>
+  <div class="rule" style="align-items:center"><span style="flex:1">Remind me when this month's AI cost reaches</span><select id="monthly" aria-label="Monthly reminder">${['5','10','20','50'].map(v=>`<option ${v===s.monthly?'selected':''} value="${v}">$${v}</option>`).join('')}</select></div>
+  <div class="rule" style="align-items:center"><span style="flex:1">Ask me first if one task may cost more than</span><select id="perTask" aria-label="Per-task limit">${['0.50','1','2','5'].map(v=>`<option ${v===s.perTask?'selected':''} value="${v}">$${v}</option>`).join('')}</select></div>
+  <div class="rule" style="align-items:center"><span style="flex:1">Offline only <span class="muted">(nothing leaves this Mac, no web lookups)</span></span><button class="toggle ${s.offline?'':'offt'}" role="switch" aria-checked="${s.offline}" data-pk="offline" aria-label="Offline only"></button></div>
+  <div class="small muted" style="margin-top:4px">This month so far: <b style="color:var(--navy)">$${(0.37+(S.task?S.task.cost:0)).toFixed(2)}</b> · ${41+(S.task?1:0)} tasks · reminder at $${s.monthly}</div>
+ </div>
+ <div class="card" id="sec-safety">
+  <h3>${ic('shield')}Safety</h3>
+  <div class="always" style="margin-top:10px">${ic('shieldok')}<div style="font-size:13px"><b>Safe space is always on</b><div class="muted small">Heybe only works inside <span class="kbd">${S.folder||'~/Heybe'}</span>. There's no off switch.</div></div><span class="lockpill" title="This can't be turned off">${ic('lock','width:11px;height:11px;color:#157A52')}Always on</span></div>
+  <div class="grp">Always asks you first</div>
+  <div class="rule">${ic('trash','color:var(--red)')}Deleting or replacing your files</div>
+  <div class="rule">${ic('folder','color:var(--red)')}Opening files outside your Heybe folder</div>
+  <div class="rule">${ic('clock','color:var(--red)')}A task that may cost more than $${s.perTask}</div>
+  <div class="rule muted">${ic('send')}Sending, posting or paying — not in this preview; will always ask</div>
+  <div class="grp">Doesn't bother you</div>
+  <div class="rule muted">${ic('check','color:var(--green)')}Reading web pages, making new files in your folder</div>
+ </div>
+ <div class="card" id="sec-apps">
+  <h3>${ic('phone')}Chat apps</h3><p class="d">Talk to Heybe from your phone. Coming after the preview.</p>
+  <div class="chatapp"><div class="pl">TG</div><div style="flex:1"><b>Telegram</b><div class="small muted">Message Heybe and approve with a tap</div></div><span class="soon">Coming soon</span></div>
+  <div class="chatapp"><div class="pl">DC</div><div style="flex:1"><b>Discord</b><div class="small muted">Private chat with your Heybe</div></div><span class="soon">Coming soon</span></div>
+ </div>
+ <div class="card" id="sec-folder"><h3>${ic('folder')}Heybe folder</h3><p class="d">The only folder Heybe can read and write.</p><div class="path" style="margin:0;font-size:14px">${ic('folder')}${S.folder||'~/Heybe'}<button class="btn sm" style="margin-left:auto" data-act="finder">Show in Finder</button></div></div>
+ <div class="card" id="sec-about"><h3>${ic('spark')}About</h3><p class="d" style="margin:0">Heybe Community · developer preview 0.1 (prototype)<br>Free and open source · <button class="link" data-act="licenses">Open-source licenses</button></p></div>`;
+ sc.scrollTop=y;
+ $('#monthly').onchange=e=>{s.monthly=e.target.value;drawSettings();toast(`Okay — we'll remind you at $${s.monthly} this month.`)};
+ $('#perTask').onchange=e=>{s.perTask=e.target.value;drawSettings();toast(`Heybe will ask first if a task may cost more than $${s.perTask}.`)};
+}
+function settingsClick(el){
+ const s=S.set,k=el.dataset.pk,p=el.dataset.p;
+ if(el.dataset.sec){const sc=el.dataset.sec;if(sc==='memory'){toast("Memory is coming in v1.1. Heybe doesn't keep long-term memories in this preview.");return true}
+  s.sec=sc;document.querySelectorAll('.snav .item').forEach(b=>{const on=b.dataset.sec===sc;b.classList.toggle('on',on);b.style.background=on?'':'none'});
+  const c=$('#sec-'+sc);if(c){c.scrollIntoView({behavior:'smooth',block:'nearest'});c.classList.add('flash');setTimeout(()=>c.classList.remove('flash'),800)}return true}
+ if(!k)return false;
+ if(k==='add'||k==='change'){s.open=p;s.err='';drawSettings();setTimeout(()=>$('#pkey')&&$('#pkey').focus(),20)}
+ else if(k==='cancel'){s.open=null;s.err='';drawSettings()}
+ else if(k==='connect'){const v=$('#pkey').value.trim();
+  if(!v){s.err='Paste your access key first.';drawSettings();$('#pkey').focus();return true}
+  if(v.length<8){s.err="This key doesn't look right. Check that you copied all of it, or make a new one with the service.";drawSettings();return true}
+  s.open=null;s.err='';s.busy=p;drawSettings();
+  setTimeout(()=>{s.busy=null;s.prov[p]={st:'on',mask:'sk-…'+v.slice(-4)};if(s.prov[s.def].st!=='on')s.def=p;drawSettings();toast(`Connected to ${PROV[p]} ✓ Your key is saved only in this Mac's Keychain.`)},1200)}
+ else if(k==='default'){s.def=p;drawSettings();toast(`${PROV[p]} is now your default.`)}
+ else if(k==='disc'){s.prov[p]={st:'none'};drawSettings();toast(`Disconnected ${PROV[p]}. The key was removed from this Mac's Keychain.`)}
+ else if(k==='offline'){s.offline=!s.offline;strip();drawSettings();toast(s.offline?'Offline only is on. Nothing leaves this Mac; web lookups are off.':'Offline only is off.')}
+ else if(k==='local'){s.local=1;drawSettings();const iv=setInterval(()=>{s.local=Math.min(100,s.local+7);if(S.view==='settings')drawSettings();if(s.local>=100){clearInterval(iv);toast('Ready to run on this computer ✓')}},300)}
+ else if(k==='pause'){toast('In the app, the download pauses here.')}
+ return true;
+}
+document.addEventListener('click',e=>{
+ const el=e.target.closest('[data-w],[data-prov],[data-act],[data-chat],[data-task],[data-suggest],[data-ap],[data-pk],[data-sec],[data-src],[data-file],#send,#restart');
+ if(!el)return;
+ if(el.dataset.file!==undefined)return;
+ if(el.dataset.ap){const k=el.dataset.ap;
+  if(k==='scrim'){if(e.target===el)dismiss();return}
+  if(k==='dismiss')dismiss();
+  else if(k==='edit'){S.task.appr.edit=true;drawModal();setTimeout(()=>{const t=$('#enote');t.focus();t.select()},20)}
+  else if(k==='back'){S.task.appr.note=$('#enote').value;S.task.appr.edit=false;drawModal()}
+  else if(k==='sendedit')decide('edit');else decide(k);return}
+ if(el.id==='restart'){location.href=location.href.split(/[?#]/)[0];return}
+ if(el.id==='send'){send();return}
+ if(S.view==='welcome'&&welcomeClick(el))return;
+ if(S.view==='settings'&&settingsClick(el))return;
+ if(el.dataset.src){e.preventDefault();toast(`In the app, this opens ${el.dataset.src} in your browser.`);return}
+ if(el.dataset.suggest){send(el.dataset.suggest);return}
+ if(el.dataset.chat){go('chat',el.dataset.chat);return}
+ if(el.dataset.task){const t=S.task;go('task',el.dataset.task);if(t&&t.id===el.dataset.task&&t.status==='waiting'&&!S.modalOpen)openApproval();return}
+ const a=el.dataset.act;const A={
+  newchat:()=>newChat(),settings:()=>go('settings'),
+  safety:()=>{S.set.sec='safety';go('settings');settingsClick({dataset:{sec:'safety'}})},
+  memory:()=>toast('Memory is coming in v1.1.'),
+  attach:()=>toast('In the app, a file picker opens here. Files are copied into your Heybe folder.'),
+  web:()=>toast(S.set.offline?'Offline only is on, so web lookups are off.':'Heybe looks things up online when it needs to — just ask.'),
+  stop:stopTask,resume:resumeTask,review:()=>{if(S.task&&S.task.status==='waiting'){if(S.view!=='task')go('task',S.task.id);openApproval()}},
+  open:()=>toast('Opening note-apps-compared.md in your default app (demo).'),
+  save:()=>toast('Saved a copy to your Downloads folder (demo).'),
+  finder:()=>toast('In the app, Finder opens with the file selected.'),
+  more:()=>toast('7 more sources are listed in the full report.'),
+  licenses:()=>toast('In the app, this lists every open-source part Heybe uses.'),
+  copy:()=>{const txt=[...document.querySelectorAll('#rtable tr')].map(r=>[...r.children].map(c=>c.childNodes[0].textContent.trim()).join('\t')).join('\n');
+   const ta=document.createElement('textarea');ta.value=txt;ta.style.cssText='position:fixed;left:-9999px';document.body.appendChild(ta);ta.select();let done=false;try{done=document.execCommand('copy')}catch(_){}ta.remove();
+   if(!done&&navigator.clipboard){navigator.clipboard.writeText(txt).catch(()=>{})}
+   toast('Table copied. Paste it into a doc or spreadsheet.')},
+  good:()=>{S.reviewed=true;$('#rev').innerHTML=revDone();toast('Marked as reviewed ✓')},
+  changes:()=>{S.draft='Can you also add Google Keep and Notesnook to the table?';go('chat',S.task.chat);toast('Tell Heybe what to change, then press Enter.')}
+ };
+ if(A[a])A[a]();
+});
+document.addEventListener('change',e=>{if(e.target.dataset&&e.target.dataset.file!==undefined&&S.task&&S.task.appr){S.task.appr.files[+e.target.dataset.file].on=e.target.checked;drawModal()}});
+document.addEventListener('keydown',e=>{
+ if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();if(S.view!=='welcome'){if(S.modalOpen)dismiss();newChat()}return}
+ if(e.key==='Escape'){if(S.modalOpen){e.preventDefault();if(S.task.appr&&S.task.appr.edit){S.task.appr.note=$('#enote').value;S.task.appr.edit=false;drawModal()}else dismiss()}return}
+ if(S.modalOpen)return;
+ if(e.key==='Enter'&&S.view==='welcome'&&S.wstep===1&&!e.target.closest('button,[data-prov]')){e.preventDefault();welcomeClick({dataset:{w:'go'}});return}
+ if(e.key==='Enter'&&e.target.matches&&e.target.matches('[data-prov],.opt,.item[tabindex]')){e.preventDefault();e.target.click();return}
+ if(e.key==='Enter'&&e.target.id==='pkey'){e.preventDefault();const b=document.querySelector('[data-pk="connect"]');b&&b.click();return}
+ if(e.key==='/'&&!e.target.matches('input,textarea,select')&&$('#inp')){e.preventDefault();$('#inp').focus()}
+});
+setInterval(tick,200);
+setTimeout(()=>{S.safeReady=true;if(S.view==='welcome'&&!S.wbusy){const p=document.querySelectorAll('.prep');p.forEach(x=>x.outerHTML=prep())}},2600);
+/* Deep links for testing: ?state=welcome|folder|chat|chatdemo|chattask|task|approval|edit|stopped|result|settings */
+(function(){
+ const st=new URLSearchParams(location.search).get('state')||location.hash.slice(1);
+ if(!st||st==='welcome')return go('welcome');
+ S.firstDone=true;S.safeReady=true;
+ if(st==='folder'){S.wstep=2;return go('welcome')}
+ if(st==='chat'){S.active=null;return go('chat')}
+ if(st==='chatdemo'){S.active=null;go('chat');return send('Compare 5 note apps for me')}
+ const c={id:nid('c-'),title:'Compare 5 note apps for me',msgs:[{id:nid('m'),role:'user',text:'Compare 5 note apps for me'},{id:nid('m'),role:'bot',full:"Happy to. I'll check each app's own website so the info is current — Notion, Obsidian, Bear, Apple Notes and Evernote — then give you a side-by-side table with sources and my pick for you.",done:true,plan:true,time:'Just now',src:'DeepSeek (online)'}]};
+ S.chats.unshift(c);S.active=c.id;startTask(c.id);c.msgs[1].task=S.task.id;
+ const t=S.task;
+ const ff=n=>{let g=0;while(t.i<n&&t.status==='running'&&g++<20){t.sub=1;t.elapsed+=2900;t.cost+=0.006;finishStep()}};
+ const quiet=()=>{S.modalOpen=false;$('#modal').innerHTML=''};
+ if(st==='chattask'){t.sub=.3;t.url='obsidian.md/pricing';t.now='Reading obsidian.md';t.sources=2;return go('chat')}
+ if(st==='task'){ff(2);t.sub=.55;t.details[2]='Reading bear.app — 3 of 5';t.url='bear.app/privacy';t.now='Reading bear.app';return go('task',t.id)}
+ if(st==='approval'||st==='edit'){ff(4);quiet();go('task',t.id);openApproval();if(st==='edit'){t.appr.edit=true;drawModal()}return}
+ if(st==='stopped'){ff(2);t.sub=.4;t.url='bear.app/privacy';t.details[2]='Reading bear.app — 3 of 5';go('task',t.id);return stopTask()}
+ if(st==='result'){ff(4);quiet();t.appr.files[2].on=false;decide('approve');t.sub=1;finishStep();ff(6);return go('task',t.id)}
+ if(st==='settings'){ff(2);return go('settings')}
+ go('chat');
+})();
+if(location.search.includes('state='))setTimeout(()=>{$('#toasts').innerHTML=''},0);
+
+</script></body></html>
