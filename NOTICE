@@ -1,4 +1,4 @@
-OpenGrok Community (codename)
+Heybe Community (https://github.com/Slovian42/heybe)
 Copyright 2026 Slovian Inc
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
@@ -15,8 +15,7 @@ including any attribution, branding, multi-tenant/commercial and redistribution 
 本项目运行在 FastClaw 之上，仅通过其 /v1/* 接口调用。本仓库源码不包含 FastClaw。
 FastClaw 的获取、安装、捆绑与再分发单独适用 FastClaw Community License，不受本仓库许可证影响。
 
-"FastClaw" is the name of its respective owners. "OpenGrok" is a temporary internal codename
-and is not affiliated with the Oracle OpenGrok project or with xAI/Grok.
+"FastClaw" is the name of its respective owners. Heybe is not affiliated with FastClaw or xAI/Grok.
 
 Other third-party npm/crate dependencies are listed in pnpm-lock.yaml / Cargo.lock and are
 governed by their own licenses.

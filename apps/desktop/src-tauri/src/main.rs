@@ -6,5 +6,5 @@ fn main() {
     // separate launchd-managed service (stage 5), not inside this process.
     tauri::Builder::default()
         .run(tauri::generate_context!())
-        .expect("error while running OpenGrok desktop");
+        .expect("error while running Heybe desktop");
 }

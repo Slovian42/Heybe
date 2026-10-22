@@ -1,5 +1,5 @@
 {
-  "name": "@opengrok/fastclaw-adapter",
+  "name": "@heybe/fastclaw-adapter",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@opengrok/shared-types": "workspace:*"
+    "@heybe/shared-types": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.17.6"

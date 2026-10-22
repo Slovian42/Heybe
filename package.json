@@ -1,8 +1,8 @@
 {
-  "name": "opengrok-community",
+  "name": "heybe",
   "private": true,
   "version": "0.0.0",
-  "description": "OpenGrok Community (codename): local personal agent assistant on top of FastClaw /v1 API",
+  "description": "Heybe Community: local personal agent assistant on top of FastClaw /v1 API",
   "packageManager": "pnpm@10.34.6",
   "engines": {
     "node": ">=20"

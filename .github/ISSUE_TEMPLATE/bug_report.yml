@@ -15,7 +15,7 @@ body:
     validations: { required: true }
   - type: input
     id: versions
-    attributes: { label: Versions / 版本, placeholder: "OpenGrok commit, FastClaw v1.4.0, macOS 15.x, Node 20.x" }
+    attributes: { label: Versions / 版本, placeholder: "Heybe commit, FastClaw v1.4.0, macOS 15.x, Node 20.x" }
     validations: { required: true }
   - type: textarea
     id: logs

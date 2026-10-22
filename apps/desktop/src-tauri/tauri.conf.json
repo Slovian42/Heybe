@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "OpenGrok",
+  "productName": "Heybe",
   "version": "0.1.0",
-  "identifier": "local.opengrok.desktop",
+  "identifier": "ai.heybe.desktop",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -10,7 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "title": "OpenGrok", "width": 1100, "height": 760 }],
+    "windows": [{ "title": "Heybe", "width": 1100, "height": 760 }],
     "security": { "csp": null }
   },
   "bundle": { "active": false, "targets": ["dmg", "app"] }

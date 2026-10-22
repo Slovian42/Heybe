@@ -13,7 +13,7 @@ pnpm test   # vitest
 
 ## Rules / 规则
 1. **FastClaw /v1 only.** `packages/fastclaw-adapter` is the only place that knows FastClaw; it may call `/v1/*` only, never `/api/*`. Lint enforces this. 只能调 `/v1/*`。
-2. **Community never depends on Pro.** No `@opengrok-pro/*` imports or deps. Pro-facing types live in `packages/shared-types/src/pro-interface.ts`, versioned (semver). 开源版绝不依赖 Pro。
+2. **Community never depends on Pro.** No `@heybe-pro/*` imports or deps. Pro-facing types live in `packages/shared-types/src/pro-interface.ts`, versioned (semver). 开源版绝不依赖 Pro。
 3. **No secrets.** Never commit keys, tokens, `.env`, DBs or logs containing them. `.env.example` holds names only. 不提交任何密钥。
 4. **Honest status.** Code must not report success without verifiable evidence (artifacts, tool results). 无证据不报成功。
 5. Small PRs, conventional commits (`feat:`, `fix:`, `docs:` …), tests for logic.

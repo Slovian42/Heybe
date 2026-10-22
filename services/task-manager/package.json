@@ -1,5 +1,5 @@
 {
-  "name": "@opengrok/task-manager",
+  "name": "@heybe/task-manager",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,8 +9,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@opengrok/shared-types": "workspace:*",
-    "@opengrok/fastclaw-adapter": "workspace:*",
+    "@heybe/shared-types": "workspace:*",
+    "@heybe/fastclaw-adapter": "workspace:*",
     "better-sqlite3": "^11.5.0"
   },
   "devDependencies": {

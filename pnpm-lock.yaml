@@ -26,7 +26,7 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@opengrok/shared-types':
+      '@heybe/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
       '@tauri-apps/api':
@@ -57,7 +57,7 @@ importers:
 
   packages/fastclaw-adapter:
     dependencies:
-      '@opengrok/shared-types':
+      '@heybe/shared-types':
         specifier: workspace:*
         version: link:../shared-types
     devDependencies:
@@ -69,10 +69,10 @@ importers:
 
   services/task-manager:
     dependencies:
-      '@opengrok/fastclaw-adapter':
+      '@heybe/fastclaw-adapter':
         specifier: workspace:*
         version: link:../../packages/fastclaw-adapter
-      '@opengrok/shared-types':
+      '@heybe/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
       better-sqlite3:

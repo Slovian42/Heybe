@@ -51,8 +51,8 @@
    export FASTCLAW_SANDBOX_BACKEND=docker    # OrbStack 提供 docker
    ```
    API key：控制台 → API Keys 创建一次（只显示一次），存入钥匙串：
-   `security add-generic-password -s opengrok-fastclaw -a "$USER" -w`（交互输入，不进 shell 历史），
-   使用时 `export FASTCLAW_API_KEY=$(security find-generic-password -s opengrok-fastclaw -w)`。
+   `security add-generic-password -s heybe-fastclaw -a "$USER" -w`（交互输入，不进 shell 历史），
+   使用时 `export FASTCLAW_API_KEY=$(security find-generic-password -s heybe-fastclaw -w)`。
 8. **Ollama（本地模型，只验证基础对话）**：`brew install ollama && ollama serve`，
    拉一个小模型如 `ollama pull qwen2.5:7b`；工具调用不在阶段 0 验证范围。
 
@@ -74,6 +74,6 @@ fastclaw daemon start                  # 首次运行可先前台 `fastclaw` 走
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18953/   # 期望 200/302
 curl -s http://127.0.0.1:18953/v1/agents -H "Authorization: Bearer $FASTCLAW_API_KEY" | head -c 200
 curl -s http://127.0.0.1:11434/api/tags | head -c 200   # Ollama 自身接口，非 FastClaw
-cd opengrok-community && pnpm install && pnpm lint && pnpm test
+cd heybe && pnpm install && pnpm lint && pnpm test
 ```
 沙箱越权实测（读宿主文件、访问未授权网络）属于第一轮任务 4，结果记录到 `docs/interface-verification.md` 第 5 行。

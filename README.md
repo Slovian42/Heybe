@@ -1,11 +1,13 @@
-# OpenGrok Community (codename)
+# Heybe Community
+
+Repo: https://github.com/Slovian42/heybe
 
 > **中文** | [English](#english)
 
 装在你自己电脑上的个人 Agent 助理：自己搭一支固定的助理团队，记得你的事，资料留在你电脑上。
 基于 [FastClaw](https://github.com/fastclaw-ai/fastclaw)（只经 `/v1/*` API 调用），自研 Tauri + React 桌面界面和本地任务管家。
 
-> ⚠️ 早期脚手架阶段（阶段 0）：代码均为占位，尚未实测任何端到端功能。“OpenGrok” 是临时代号，与 Oracle OpenGrok 项目及 xAI/Grok 无关，公开发布前会更名。
+> ⚠️ 早期脚手架阶段（阶段 0）：代码均为占位，尚未实测任何端到端功能。品牌 HeyBe（写法 Heybe），原代号 OpenGrok。
 
 ## 仓库结构
 | 路径 | 说明 |
@@ -40,7 +42,7 @@ cp .env.example .env   # 只填你自己的值；.env 已被 git 忽略
 A personal agent assistant that lives on your own machine: build a fixed team of assistants that remember what matters to you, with your data staying local.
 Built on [FastClaw](https://github.com/fastclaw-ai/fastclaw) (via its `/v1/*` API only), with our own Tauri + React desktop app and a local task manager.
 
-> ⚠️ Early scaffold (stage 0): everything is a placeholder; nothing end-to-end is tested yet. "OpenGrok" is a temporary codename, unaffiliated with Oracle's OpenGrok or xAI/Grok, and will be renamed before public launch.
+> ⚠️ Early scaffold (stage 0): everything is a placeholder; nothing end-to-end is tested yet. Brand: HeyBe (written "Heybe").
 
 ### Layout
 | Path | What |

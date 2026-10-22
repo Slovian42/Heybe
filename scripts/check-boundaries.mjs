@@ -1,5 +1,5 @@
 // Guards two architecture rules:
-// 1. Community must never depend on Pro (no "opengrok-pro" / "@opengrok-pro/*" anywhere).
+// 1. Community must never depend on Pro (no "heybe-pro" / "@heybe-pro/*" anywhere).
 // 2. fastclaw-adapter may only call FastClaw /v1/* (no "/api/" paths).
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -18,7 +18,7 @@ function walk(dir) {
 }
 function check(p) {
   const src = readFileSync(p, "utf8");
-  if (/@opengrok-pro\/|["']opengrok-pro["']/.test(src)) errors.push(`${p}: Community must not depend on Pro`);
+  if (/@heybe-pro\/|["']heybe-pro["']/.test(src)) errors.push(`${p}: Community must not depend on Pro`);
   if (p.includes("packages/fastclaw-adapter/src") && /["'`][^"'`\n]*\/api\//.test(src))
     errors.push(`${p}: adapter must only use /v1/*`);
 }

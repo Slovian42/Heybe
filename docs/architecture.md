@@ -58,6 +58,6 @@ SQLite + 全文检索；按权限读、检索、提交、修正、删除；用�
 
 ### 3.9 开源 / 闭源边界
 - 开源：界面、FastClaw 适配、固定成员调度、共享记忆、任务记录、基础恢复、审批、导入导出。
-- 闭源（`opengrok-pro`）：动态 Agent 工厂、Jev 协调、商业授权模块。
+- 闭源（`heybe-pro`）：动态 Agent 工厂、Jev 协调、商业授权模块。
 - 接口：决策建议、受限成员创建请求、运行事件、产物引用（`PRO_INTERFACE_VERSION`，semver）。
 - **Community 不依赖 Pro**（`scripts/check-boundaries.mjs` 强制）。
