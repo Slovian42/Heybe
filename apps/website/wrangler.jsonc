@@ -1,0 +1,28 @@
+// heybe.dev: Cloudflare Worker + static assets. Deploy: `npx wrangler deploy` from apps/website.
+{
+  "name": "heybe-website",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "heybe.dev", "custom_domain": true },
+    { "pattern": "www.heybe.dev", "custom_domain": true }
+  ],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  // Waitlist storage. Create once with `npx wrangler d1 create heybe-waitlist`,
+  // paste the id below, uncomment, then run:
+  //   npx wrangler d1 execute heybe-waitlist --remote --file=schema.sql
+  // Without this binding the site works and /api/waitlist answers 503 "waitlist_unavailable".
+  // "d1_databases": [
+  //   { "binding": "DB", "database_name": "heybe-waitlist", "database_id": "<id from wrangler d1 create>" }
+  // ],
+  // IP_SALT is a secret (random string) used to hash IPs for rate limiting:
+  //   openssl rand -hex 16 | npx wrangler secret put IP_SALT
+  "observability": { "enabled": true }
+}

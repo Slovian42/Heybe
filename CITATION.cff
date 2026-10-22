@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use or reference Heybe, please cite it as below."
+title: "Heybe: open-source personal AI assistant for Mac"
+type: software
+authors:
+  - name: "Slovian Inc"
+repository-code: "https://github.com/Slovian42/Heybe"
+url: "https://heybe.dev"
+license: Apache-2.0
+abstract: >-
+  Heybe is a local-first personal AI assistant (AI agent) that runs on your Mac,
+  executes actions in a sandbox by default and asks for approval before sensitive
+  actions. It supports DeepSeek by default, bring-your-own OpenAI or Claude API keys,
+  and local models through Ollama.
+keywords:
+  - personal AI assistant
+  - local AI agent
+  - self-hosted
+  - macOS
+  - sandbox
+  - bring your own key
+  - DeepSeek
+  - Ollama

@@ -9,3 +9,4 @@ target/
 .DS_Store
 coverage/
 apps/desktop/src-tauri/gen/
+.wrangler/

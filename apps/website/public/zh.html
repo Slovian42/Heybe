@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-Hans"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Heybe：开源的 Mac 本地个人 AI 助理 | 说一句，剩下的交给它</title>
+<meta name="description" content="Heybe 是在你自己 Mac 上运行的开源个人 AI 助理（AI 智能体）：在安全沙箱里查资料、写报告，做敏感操作前先问你。默认 DeepSeek，也可自带 OpenAI 或 Claude API Key。">
+<link rel="canonical" href="https://heybe.dev/zh">
+<link rel="alternate" hreflang="en" href="https://heybe.dev/"><link rel="alternate" hreflang="zh-Hans" href="https://heybe.dev/zh"><link rel="alternate" hreflang="x-default" href="https://heybe.dev/">
+<meta name="theme-color" content="#0D2B52">
+<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="manifest" href="/site.webmanifest">
+<link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+<meta property="og:type" content="website"><meta property="og:site_name" content="Heybe"><meta property="og:locale" content="zh_CN">
+<meta property="og:title" content="说一句，剩下的交给它。"><meta property="og:description" content="装在你自己电脑上的开源 AI 助理：在安全空间里干活，动手前先问你。现在加入候补名单。">
+<meta property="og:url" content="https://heybe.dev/zh"><meta property="og:image" content="https://heybe.dev/og.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><meta property="og:image:alt" content="Heybe：在你 Mac 上运行的开源个人 AI 助理">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="说一句，剩下的交给它。"><meta name="twitter:description" content="装在你自己电脑上的开源 AI 助理：在安全空间里干活，动手前先问你。现在加入候补名单。"><meta name="twitter:image" content="https://heybe.dev/og.png"><meta name="twitter:image:alt" content="Heybe：在你 Mac 上运行的开源个人 AI 助理">
+<script type="application/ld+json">{"@context": "https://schema.org", "@graph": [{"@type": "Organization", "@id": "https://heybe.dev/#org", "name": "Slovian Inc", "url": "https://heybe.dev/", "logo": "https://heybe.dev/icon-512.png", "sameAs": ["https://github.com/Slovian42"]}, {"@type": "WebSite", "@id": "https://heybe.dev/#website", "url": "https://heybe.dev/", "name": "Heybe", "publisher": {"@id": "https://heybe.dev/#org"}, "inLanguage": ["en", "zh-Hans"]}, {"@type": "SoftwareApplication", "name": "Heybe", "description": "在 Mac 上运行的开源个人 AI 助理（本地 AI 智能体）。默认在沙箱中执行操作，敏感操作前征求确认。默认 DeepSeek，可自带 OpenAI 或 Claude API Key，也可通过 Ollama 使用本地模型。开发中。", "applicationCategory": "ProductivityApplication", "operatingSystem": "macOS", "url": "https://heybe.dev/", "image": "https://heybe.dev/og.png", "screenshot": "https://heybe.dev/images/heybe-task-progress-sandbox.webp", "isAccessibleForFree": true, "license": "https://www.apache.org/licenses/LICENSE-2.0", "codeRepository": "https://github.com/Slovian42/Heybe", "author": {"@id": "https://heybe.dev/#org"}, "publisher": {"@id": "https://heybe.dev/#org"}}]}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Heybe 免费吗？", "acceptedAnswer": {"@type": "Answer", "text": "免费。Heybe 社区版以 Apache-2.0 开源。以后会推出功能更多的付费 Pro 版，价格尚未公布。"}}, {"@type": "Question", "name": "现在能下载吗？", "acceptedAnswer": {"@type": "Answer", "text": "还不能。开发者预览版正在开发中。加入候补名单，准备好后我们会发邮件通知你。"}}, {"@type": "Question", "name": "我的数据会上传到云端吗？", "acceptedAnswer": {"@type": "Answer", "text": "Heybe 在你的 Mac 上运行，文件留在本机。思考部分由你选的 AI 服务完成（默认 DeepSeek，或用你自己的 OpenAI、Claude Key）；想完全离线，也可以用本机模型。"}}, {"@type": "Question", "name": "能用自己的 OpenAI 或 Claude API Key 吗？", "acceptedAnswer": {"@type": "Answer", "text": "可以。支持自带 OpenAI 或 Anthropic Claude 的 Key，Key 存在 macOS 钥匙串里。"}}, {"@type": "Question", "name": "它会不经同意就做事吗？", "acceptedAnswer": {"@type": "Answer", "text": "不会。删除文件、超出预算等敏感操作都要等你点击确认。第一版不会替你发邮件、发帖或付款。"}}, {"@type": "Question", "name": "Heybe 能替代 Manus 或 ChatGPT Agent 吗？", "acceptedAnswer": {"@type": "Answer", "text": "它做的是类似的事：把多步骤的活交出去。不同的是它在你自己的 Mac 上运行、开源，并且 AI 由你来选。"}}, {"@type": "Question", "name": "需要什么设备？", "acceptedAnswer": {"@type": "Answer", "text": "一台 Mac，优先支持 Apple Silicon。第一版不支持 Windows。安装包只在 heybe.dev 提供，不上 Mac App Store。"}}, {"@type": "Question", "name": "需要懂技术吗？", "acceptedAnswer": {"@type": "Answer", "text": "不需要。会发短信，就会用 Heybe。"}}]}</script>
+<style>
+@font-face{font-family:Inter;font-style:normal;font-weight:400 800;font-display:swap;src:url(/fonts/inter-latin.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+:root{--blue:#1E88E5;--navy:#0D2B52;--cloud:#F7FAFD;--red:#E8453C;--red2:#C8352D;--gray:#5B6575;--line:#E3E9F1;--green:#1F9D6B}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-feature-settings:"cv11","ss01";color:var(--navy);background:var(--cloud);line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:var(--blue)}img{max-width:100%;height:auto;display:block}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+.skip{position:absolute;left:-999px}.skip:focus{left:12px;top:12px;background:#fff;padding:8px 12px;border-radius:8px;z-index:9}
+header{display:flex;justify-content:space-between;align-items:center;padding:18px 0;gap:16px}
+.logo{font-weight:800;font-size:22px;letter-spacing:-.3px;text-decoration:none;color:var(--navy)}.logo span{color:var(--red)}
+nav{display:flex;gap:18px;align-items:center;font-size:15px;flex-wrap:wrap}nav a{color:var(--navy);text-decoration:none;font-weight:500}nav a:hover{color:var(--blue)}
+nav .pill{background:var(--navy);color:#fff;padding:8px 14px;border-radius:999px}nav .pill:hover{color:#fff;background:#163d70}
+.hero{padding:56px 0 24px;text-align:center}
+.badge{display:inline-block;font-size:13px;font-weight:600;color:#8a5a00;background:#FFF4DB;border:1px solid #F3DDA6;border-radius:999px;padding:4px 12px;margin-bottom:18px}
+h1{font-size:clamp(36px,6vw,60px);line-height:1.06;margin:0 0 18px;letter-spacing:-1.2px}
+.sub{font-size:19px;color:var(--gray);max-width:700px;margin:0 auto 28px}
+form.join{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:0 auto}
+form.join input[type=email]{padding:14px 16px;border:1px solid #cfd8e3;border-radius:12px;font:inherit;font-size:16px;min-width:290px;background:#fff;color:var(--navy)}
+form.join input[type=email]:focus{outline:3px solid rgba(30,136,229,.25);border-color:var(--blue)}
+button,.btn{padding:14px 22px;border:0;border-radius:12px;background:var(--red);color:#fff;font:inherit;font-weight:700;font-size:16px;cursor:pointer;text-decoration:none;display:inline-block}
+button:hover,.btn:hover{background:var(--red2)}button[disabled]{opacity:.6;cursor:wait}
+.btn.ghost{background:#fff;color:var(--navy);border:1px solid #cfd8e3}.btn.ghost:hover{background:#eef3f9}
+.hp{position:absolute!important;left:-10000px!important;width:1px;height:1px;overflow:hidden}
+.fine{font-size:13px;color:var(--gray);margin-top:10px}.msg{min-height:22px;font-size:15px;font-weight:600;margin-top:10px}.msg.ok{color:var(--green)}.msg.err{color:var(--red2)}
+.shot{margin:40px auto 0;max-width:980px;border-radius:16px;overflow:hidden;box-shadow:0 24px 60px rgba(13,43,82,.18),0 2px 6px rgba(13,43,82,.08);border:1px solid var(--line);background:#fff}
+.cap{font-size:13px;color:var(--gray);text-align:center;margin-top:12px}
+.ctas{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:18px}
+section{padding:64px 0}h2{font-size:clamp(26px,3.6vw,36px);text-align:center;margin:0 0 12px;letter-spacing:-.6px}.lead{text-align:center;color:var(--gray);max-width:680px;margin:0 auto 32px;font-size:17px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.card{background:#fff;border-radius:16px;padding:22px;box-shadow:0 1px 3px rgba(13,43,82,.08);border:1px solid #edf1f6}
+.card h3{margin:0 0 6px;color:var(--blue);font-size:17px}.say{font-style:italic;margin:0 0 6px}.card p{margin:0 0 6px}
+.soon{display:inline-block;font-size:11px;font-weight:700;color:var(--gray);background:#eef3f9;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:2px;font-style:normal}
+.steps{counter-reset:s}.steps .card h3::before{counter-increment:s;content:counter(s) ". "}
+.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(440px,100%),1fr));gap:22px}
+.gallery figure{margin:0;background:#fff;border-radius:14px;border:1px solid var(--line);overflow:hidden;box-shadow:0 6px 20px rgba(13,43,82,.08)}
+.gallery figcaption{padding:12px 16px;font-size:14px;color:var(--gray)}.gallery figcaption b{color:var(--navy)}
+details{background:#fff;border-radius:12px;padding:14px 18px;margin:0 auto 10px;max-width:820px;border:1px solid #edf1f6}summary{font-weight:700;cursor:pointer}details p{margin:10px 0 2px;color:#33465F}
+.dev{background:#fff;border:1px solid var(--line);border-radius:20px;padding:32px;display:grid;grid-template-columns:1.2fr 1fr;gap:28px;align-items:center}
+.dev pre{background:#0D2B52;color:#dbe8f7;border-radius:12px;padding:16px;overflow:auto;font-size:13px;margin:0}
+@media (max-width:760px){.dev{grid-template-columns:1fr}nav .hide-sm,nav .pill{display:none}nav{gap:14px}}
+.cta{background:var(--navy);color:#fff;text-align:center;border-radius:24px;padding:52px 24px}.cta h2{color:#fff}.cta .sub{color:#cfd8e3}.cta .fine{color:#a9bfdc}.cta .fine a{color:#cfe3ff}.cta .msg.ok{color:#7be0b5}.cta .msg.err{color:#ffb4ae}
+footer{padding:36px 0 48px;font-size:14px;color:var(--gray);text-align:center}footer a{color:inherit}
+</style></head><body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="wrap">
+<header><a class="logo" href="/zh" aria-label="Heybe home">Heybe<span>•</span></a>
+<nav aria-label="Main"><a class="hide-sm" href="#use-cases">能做什么</a><a class="hide-sm" href="/demo">体验原型</a><a href="https://github.com/Slovian42/Heybe" rel="noopener">GitHub</a><a href="/" hreflang="en" lang="en">English</a><a class="pill" href="#join">加入候补</a></nav></header>
+<main id="main">
+<div class="hero">
+<div class="badge">开发者预览版开发中 · 暂未开放下载</div>
+<h1>说一句，<br>剩下的交给它。</h1>
+<p class="sub">住在你 Mac 上的 AI 助理。用大白话告诉它你要什么，它会拆好步骤、上网查资料、写好报告；关掉窗口，它也会接着做完。</p>
+<form class="join" action="/api/waitlist" method="post" data-source="hero"><label class="hp" aria-hidden="true">Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label><input type="hidden" name="lang" value="zh-Hans"><input type="hidden" name="source" value="hero"><input type="email" name="email" required maxlength="254" autocomplete="email" placeholder="你的邮箱" aria-label="邮箱地址"><button type="submit">加入候补名单</button></form>
+<p class="msg" role="status" aria-live="polite"></p>
+<p class="fine">免费开源 · 优先支持 Mac · 绝不发垃圾邮件</p>
+<a href="/demo" class="shot" aria-label="打开 Heybe 可点击原型"><img src="/images/heybe-task-progress-sandbox.webp" width="1280" height="800" fetchpriority="high" alt="Heybe 桌面应用设计稿：比较五款笔记软件的任务在安全沙箱里逐步执行，带停止按钮和已花费用"></a>
+<p class="cap">设计稿，内容为示例。正式应用正在开发中。</p>
+<div class="ctas"><a class="btn" href="/demo">体验可点击原型</a><a class="btn ghost" href="https://github.com/Slovian42/Heybe" rel="noopener">在 GitHub 上查看</a></div>
+</div>
+<section id="use-cases"><h2>你说一句，Heybe 去办。</h2><p class="lead">把琐事交出去，就像交给一个很懂电脑的朋友。</p><div class="grid"><div class="card"><h3>调研对比</h3><p class="say">“帮我比较这五款工具。”</p><p>逐个查看官网，给你一张带来源的对比表和推荐结论。</p></div><div class="card"><h3>写作</h3><p class="say">“把这份会议记录整理成周报。”</p><p>提炼决定、待办和负责人，生成可编辑的草稿。</p></div><div class="card"><h3>阅读</h3><p class="say">“总结这篇文章和它链接的三篇。”</p><p>一份简短摘要，每条都附上原文链接。</p></div><div class="card"><h3>整理文件</h3><p class="say">“清理一下我的草稿文件夹。”</p><p>找出旧副本，移到废纸篓前先问你。</p></div><div class="card"><h3>一人公司</h3><p class="say">“把这周的网站数据做个小结。”</p><p>一份简短回顾，外加下周的三条建议。</p></div><div class="card"><h3>早间简报 <span class=soon>即将推出</span></h3><p class="say">“每天早上 8 点把重要的事发给我。”</p><p>你关心的新闻和当天日程，汇总后发到手机。</p></div><div class="card"><h3>降价提醒 <span class=soon>即将推出</span></h3><p class="say">“这台显示器低于 250 美元时告诉我。”</p><p>定时查看几家商店，到价就提醒你。</p></div><div class="card"><h3>Telegram 对话 <span class=soon>即将推出</span></h3><p class="say">“在手机上给 Heybe 发消息。”</p><p>在 Telegram 里交代任务，Heybe 在你的 Mac 上干活。</p></div></div></section>
+<section><h2>怎么用</h2><div class="grid steps"><div class="card"><h3>说一句。</h3><p>像问朋友一样，打字说出你要什么。</p></div><div class="card"><h3>它开始干活。</h3><p>Heybe 拆分步骤、上网查资料；关掉窗口它也会继续。</p></div><div class="card"><h3>拿到结果。</h3><p>完整的报告或草稿，带来源，存成文件放在你的 Mac 上。</p></div></div></section>
+<section id="screens"><h2>界面预览</h2><p class="lead">以下为 v1 设计稿，内容均为示例。</p><div class="gallery"><figure><img src="/images/heybe-onboarding-choose-ai-model.webp" width="1280" height="800" loading="lazy" decoding="async" alt="Heybe 首次启动：选择 DeepSeek、自带 OpenAI 或 Claude API Key，或在 Mac 本地运行模型"><figcaption><b>选你的 AI</b> · DeepSeek、自己的 Key 或本地模型。</figcaption></figure><figure><img src="/images/heybe-chat-plan.webp" width="1280" height="800" loading="lazy" decoding="async" alt="Heybe 对话：本地 AI 助理把一句话拆成分步计划"><figcaption><b>说一句就行</b> · 它先回你一个计划，然后开始干活。</figcaption></figure><figure><img src="/images/heybe-action-approval.webp" width="1280" height="800" loading="lazy" decoding="async" alt="Heybe 操作确认弹窗：AI 智能体删除文件前先征求同意，可拒绝、修改或同意"><figcaption><b>先问再做</b> · 你不点，它就不动。</figcaption></figure><figure><img src="/images/heybe-task-result-report.webp" width="1280" height="800" loading="lazy" decoding="async" alt="Heybe 任务结果：带来源的对比表和推荐，保存为本地文件"><figcaption><b>成品交付</b> · 带来源的报告，存在你的 Mac 上。</figcaption></figure></div></section>
+<section><h2>你的东西，始终归你。</h2><p class="lead">让你不用担心 AI 在你电脑上乱动。</p><div class="grid"><div class="card"><h3>在你电脑上运行</h3><p>文件、任务和记录都留在你自己的 Mac 上。</p></div><div class="card"><h3>在安全空间里干活</h3><p>所有操作默认在隔离沙箱里执行，碰不到你的个人文件。</p></div><div class="card"><h3>动手前先问你</h3><p>删除文件、写到它的文件夹之外、超出预算，都要你亲手点击确认；在聊天里说“好”不算。</p></div><div class="card"><h3>AI 由你选</h3><p>默认 DeepSeek，也可以用自己的 OpenAI 或 Claude Key，或在 Mac 上运行本地模型。</p></div></div></section>
+<section><h2>一个助理，或一整个团队。</h2><p class="lead">Heybe 社区版免费开源。Heybe Pro（以后推出）会针对每件事自动组建合适的助理团队：一个查资料，一个写，一个复核。</p></section>
+<section id="developers"><div class="dev"><div><h2 style="text-align:left">开源，Apache-2.0</h2><p>Heybe 社区版由 Slovian Inc 公开开发，代码为 TypeScript（桌面应用基于 Tauri + React，本地任务管家基于 SQLite）。欢迎阅读代码、跑测试、提 Issue，或带 DCO 签名提交 PR。</p><div class="ctas" style="justify-content:flex-start"><a class="btn ghost" href="https://github.com/Slovian42/Heybe" rel="noopener">在 GitHub 上看代码</a></div></div><pre aria-label="Quick start"><code>git clone https://github.com/Slovian42/Heybe.git
+cd Heybe
+pnpm install
+pnpm lint &amp;&amp; pnpm test</code></pre></div></section>
+<section id="faq"><h2>常见问题</h2><details><summary>Heybe 免费吗？</summary><p>免费。Heybe 社区版以 Apache-2.0 开源。以后会推出功能更多的付费 Pro 版，价格尚未公布。</p></details><details><summary>现在能下载吗？</summary><p>还不能。开发者预览版正在开发中。加入候补名单，准备好后我们会发邮件通知你。</p></details><details><summary>我的数据会上传到云端吗？</summary><p>Heybe 在你的 Mac 上运行，文件留在本机。思考部分由你选的 AI 服务完成（默认 DeepSeek，或用你自己的 OpenAI、Claude Key）；想完全离线，也可以用本机模型。</p></details><details><summary>能用自己的 OpenAI 或 Claude API Key 吗？</summary><p>可以。支持自带 OpenAI 或 Anthropic Claude 的 Key，Key 存在 macOS 钥匙串里。</p></details><details><summary>它会不经同意就做事吗？</summary><p>不会。删除文件、超出预算等敏感操作都要等你点击确认。第一版不会替你发邮件、发帖或付款。</p></details><details><summary>Heybe 能替代 Manus 或 ChatGPT Agent 吗？</summary><p>它做的是类似的事：把多步骤的活交出去。不同的是它在你自己的 Mac 上运行、开源，并且 AI 由你来选。</p></details><details><summary>需要什么设备？</summary><p>一台 Mac，优先支持 Apple Silicon。第一版不支持 Windows。安装包只在 heybe.dev 提供，不上 Mac App Store。</p></details><details><summary>需要懂技术吗？</summary><p>不需要。会发短信，就会用 Heybe。</p></details></section>
+<section id="join"><div class="cta"><h2>把琐事交给它。</h2><p class="sub">加入候补名单，第一批体验 Heybe。</p><form class="join" action="/api/waitlist" method="post" data-source="footer"><label class="hp" aria-hidden="true">Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label><input type="hidden" name="lang" value="zh-Hans"><input type="hidden" name="source" value="footer"><input type="email" name="email" required maxlength="254" autocomplete="email" placeholder="你的邮箱" aria-label="邮箱地址"><button type="submit">抢先体验</button></form><p class="msg" role="status" aria-live="polite"></p><p class="fine">我们只保存你的邮箱和报名时间，仅用于在 Heybe 准备好时邀请你。不发订阅邮件，不与任何人分享。<a href="/privacy#zh">隐私说明</a></p></div></section>
+</main>
+<footer>© 2026 Slovian Inc · <a href="/privacy#zh">隐私</a> · <a href="https://github.com/Slovian42/Heybe" rel="noopener">GitHub 开源仓库</a> · <a href="/demo">体验原型</a><br><small>文中产品名称和商标归各自所有者所有。Heybe 与 OpenAI、Anthropic、DeepSeek、Manus 均无隶属关系。</small></footer>
+</div>
+<script>
+(function(){var M=document.documentElement.lang.indexOf('zh')===0?{ok:'已加入候补名单！轮到你时我们会发邮件通知你。',bad:'请输入有效的邮箱地址。',slow:'提交太频繁了，请稍后再试。',err:'出错了，请稍后再试。',off:'候补名单即将开放，请过几天再来。'}:{ok:"You're on the list! We'll email you when your spot opens up.",bad:'Please enter a valid email address.',slow:'Too many tries. Please wait a few minutes.',err:'Something went wrong. Please try again later.',off:'The waitlist opens in a few days. Please check back soon.'};
+if(location.search.indexOf('joined=1')>-1){document.querySelectorAll('.msg').forEach(function(m){m.textContent=M.ok;m.className='msg ok'})}
+document.querySelectorAll('form.join').forEach(function(f){f.addEventListener('submit',function(e){e.preventDefault();var b=f.querySelector('button'),m=f.parentNode.querySelector('.msg'),em=f.email.value.trim();
+if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){m.textContent=M.bad;m.className='msg err';return}
+b.disabled=true;fetch('/api/waitlist',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:em,website:f.website.value,lang:document.documentElement.lang,source:f.dataset.source||''})}).then(function(r){return r.json().catch(function(){return{}}).then(function(j){return{s:r.status,j:j}})}).then(function(x){
+if(x.s===200){m.textContent=M.ok;m.className='msg ok';f.reset()}else if(x.s===429){m.textContent=M.slow;m.className='msg err'}else if(x.s===400){m.textContent=M.bad;m.className='msg err'}else if(x.s===503){m.textContent=M.off;m.className='msg err'}else{m.textContent=M.err;m.className='msg err'}}).catch(function(){m.textContent=M.err;m.className='msg err'}).then(function(){b.disabled=false})})})})();
+</script>
+</body></html>

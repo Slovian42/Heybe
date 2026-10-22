@@ -10,6 +10,13 @@ export default tseslint.config(
     languageOptions: { globals: { URL: "readonly", console: "readonly", process: "readonly" } }
   },
   {
+    files: ["apps/website/src/**/*.js"],
+    languageOptions: {
+      sourceType: "module",
+      globals: { Response: "readonly", Request: "readonly", URL: "readonly", URLSearchParams: "readonly", crypto: "readonly", TextEncoder: "readonly" }
+    }
+  },
+  {
     files: ["packages/fastclaw-adapter/src/**/*.ts"],
     rules: {
       "no-restricted-syntax": ["error", {
