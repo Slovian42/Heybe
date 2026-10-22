@@ -72,3 +72,4 @@ export interface SharedMemoryFact {
 }
 
 export * from "./pro-interface.js";
+export * from "./fastclaw.js";
