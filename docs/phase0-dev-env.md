@@ -79,3 +79,10 @@ curl -s http://127.0.0.1:11434/api/tags | head -c 200   # Ollama 自身接口，
 cd heybe && pnpm install && pnpm lint && pnpm test
 ```
 沙箱越权实测（读宿主文件、访问未授权网络）属于第一轮任务 4，结果记录到 `docs/interface-verification.md` 第 5 行。
+
+## 4. DeepSeek 最小对话（阶段 0）
+
+钉死后的 FastClaw 配好 DeepSeek Agent 后，用适配层跑一轮流式对话并核对 `model` 回显：
+
+见 [`poc-deepseek-min.md`](./poc-deepseek-min.md) 与 `scripts/poc/deepseek-min-chat.ts`。
+
