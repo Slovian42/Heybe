@@ -32,8 +32,11 @@
 # DeepSeek 密钥文件：权限必须 600，否则脚本直接 FAIL。可用 HEYBE_POC_ENV 改路径。
 ( umask 077; read -rs K; printf 'DEEPSEEK_API_KEY=%s\n' "$K" > ~/.heybe-poc.env ); chmod 600 ~/.heybe-poc.env
 
-git clone https://github.com/Slovian42/Heybe.git && cd Heybe && git checkout docs/sandbox-poc
+git clone https://github.com/Slovian42/Heybe.git && cd Heybe
+# 含 bash 3.2 花括号修复的分支（合入 main 后可直接用 main）：
+git fetch origin && git checkout fix/poc-bash-brace   # 或：git checkout main && git pull
 scripts/poc/boxlite-poc.sh all
+# Lima 若仍超时，可加长：LIMA_START_TIMEOUT=45m scripts/poc/boxlite-poc.sh all
 ```
 
 `all` 依次运行：`precheck → install → serve → ws-probe → fastclaw-boxlite → setup-boxlite（init/doctor/apikey）→ verify-boxlite → metrics → lima → fastclaw-docker → setup-docker（init/network=none/doctor/apikey）→ verify-docker`，最后生成报告。
@@ -41,6 +44,29 @@ scripts/poc/boxlite-poc.sh all
 - 每一步在子 shell 里运行，FAIL 只记录不中断；依赖它的步骤标为 SKIP（例如 serve 失败则跳过 BoxLite 的 FastClaw 步骤，但 `metrics`、`lima` 及整条 docker 对照照常运行）。
 - 不会自动 cleanup。
 - 报告：`~/.local/opt/heybe-poc/report.md`（600）。包括步骤状态、handshake/frames_with_marker 两行、自动回填表、`results.tsv` 全文、三条 `--help` 输出、失败步骤日志尾部。写入前做脱敏：DeepSeek key 与两个 FastClaw apikey 的值替换为 `***`，另外抹掉 `token:`、`password`、`Bearer xxx`、`sk-…` 形态。
+
+
+## 1.1 已知失败与重跑（2026-10-22 Mac 实测）
+
+首次在 M3 Mac（macOS 自带 bash 3.2）上跑 `all` 时：
+
+1. **install FAIL**：`BOXLITE_DIR�: unbound variable`。根因是 bash 3.2 + `set -u` 下，未加花括号的 `$BOXLITE_DIR` 紧挨全角括号 `（` 时，会被当成变量名 `BOXLITE_DIR（…`。脚本已改为一律 `${VAR}`。
+2. **lima FAIL**：`limactl start` 约 10 分钟后 fatal「did not receive an event with the running status」，日志里多次 guest clock Time sync。这是**虚拟机启动超时/时间同步**问题，不是密钥问题。脚本已把 `--timeout` 默认提到 30 分钟（可用环境变量 `LIMA_START_TIMEOUT` 覆盖，例如 `45m`）；失败时请先 `limactl delete -f heybe-poc` 再重试。
+
+`all` 模式下某步 FAIL 只记状态，依赖它的步骤 SKIP，独立步骤继续（与正文第 1 节一致）。
+
+**重跑前建议清理：**
+
+```bash
+# 停掉上次残留；不要发 agents-init.log
+cd ~/heybe-poc   # 或你 clone 的目录
+git fetch origin && git checkout fix/poc-bash-brace && git pull
+scripts/poc/boxlite-poc.sh cleanup
+limactl delete -f heybe-poc 2>/dev/null || true
+# 密钥文件保留即可（仍须 600）
+LIMA_START_TIMEOUT=45m scripts/poc/boxlite-poc.sh all
+# 回传：~/.local/opt/heybe-poc/report.md（已脱敏）
+```
 
 ## 2. 密钥处理
 
@@ -115,3 +141,5 @@ rm ~/.heybe-poc.env                           # 用完删除密钥文件
 7. CLI 在 gateway 运行时写同一数据库是否会立即生效：`agents config` 会调 `notifyGatewayReload`；`agents init` 是否同样生效待核实（如有问题，重跑 `fastclaw-<backend>` 前先 `cleanup-fastclaw`）。
 8. BoxLite 数据目录（脚本假定 `~/.boxlite`）：`ls -d ~/.boxlite ~/Library/Application\ Support/boxlite 2>/dev/null`。
 9. Lima docker socket 路径：`ls ~/.lima/heybe-poc/sock`。
+10. Lima 启动超时：`limactl start --timeout` 由脚本环境变量 `LIMA_START_TIMEOUT`（默认 `30m`）控制；日志出现 guest clock / Time sync 时先 `limactl delete -f heybe-poc` 再加重试。
+11. macOS bash 3.2：消息字符串里路径展开必须用 `${VAR}`，不能写紧挨全角标点的 `$VAR`。

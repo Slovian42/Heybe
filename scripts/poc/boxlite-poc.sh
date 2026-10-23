@@ -6,8 +6,11 @@
 #   lima | fastclaw-docker | setup docker | verify docker | report | cleanup-fastclaw | cleanup
 # 密钥：
 #   DEEPSEEK_API_KEY  从 ${HEYBE_POC_ENV:-~/.heybe-poc.env} 读取（文件权限必须是 600，内容一行 DEEPSEEK_API_KEY=...）
-#   FastClaw apikey   由脚本自动生成，只写进 $POC_HOME/<backend>/fastclaw-apikey（600），不输出到终端
+#   FastClaw apikey   由脚本自动生成，只写进 ${POC_HOME}/<backend>/fastclaw-apikey（600），不输出到终端
 # 任何密钥都不会打印、写进日志或报告；报告写入前会再做一次脱敏。
+# 兼容：macOS 自带 bash 3.2 + set -u 下，$VAR 紧挨全角括号会被当成变量名；脚本里路径展开一律 ${VAR}。
+# Lima：limactl start --timeout 默认用 LIMA_START_TIMEOUT（默认 30m）；失败可 limactl delete -f heybe-poc 后重试。
+# all：每步在子 shell 跑，FAIL 只记状态不中断；依赖未通过的步骤 SKIP，独立步骤继续。
 set -euo pipefail
 umask 077
 
@@ -36,7 +39,7 @@ pass() { printf '\033[32mPASS\033[0m %s\n' "$*"; printf 'PASS\t%s\t%s\n' "$(date
 fail() { printf '\033[31mFAIL\033[0m %s\n' "$*" >&2; printf 'FAIL\t%s\t%s\n' "$(date +%FT%T)" "$*" >>"$RESULTS"; exit 1; }
 info() { printf -- '---- %s\n' "$*"; }
 rec()  { printf 'METRIC\t%s\t%s\n' "$(date +%FT%T)" "$*" | tee -a "$RESULTS"; }
-need() { command -v "$1" >/dev/null 2>&1 || fail "缺少命令 $1"; }
+need() { command -v "$1" >/dev/null 2>&1 || fail "缺少命令 ${1}"; }
 now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
 home_for() { echo "$POC_HOME/$1"; }               # 每个后端独立的 FASTCLAW_HOME
 apikey_file() { echo "$POC_HOME/$1/fastclaw-apikey"; }
@@ -46,18 +49,18 @@ wait_http() { local _i; for _i in $(seq 1 "$2"); do curl -sS -o /dev/null -m 2 "
 
 # ---------------------------------------------------------------- secrets
 load_deepseek() {
-  [ -f "$POC_ENV" ] || fail "找不到 $POC_ENV（新建：umask 077; printf 'DEEPSEEK_API_KEY=%s\\n' '<key>' > $POC_ENV）"
+  [ -f "$POC_ENV" ] || fail "找不到 ${POC_ENV}（新建：umask 077; printf 'DEEPSEEK_API_KEY=%s\\n' '<key>' > ${POC_ENV}）"
   local mode; mode=$(file_mode "$POC_ENV")
-  [ "$mode" = 600 ] || fail "$POC_ENV 权限是 $mode，必须是 600（chmod 600 $POC_ENV）"
+  [ "$mode" = 600 ] || fail "${POC_ENV} 权限是 ${mode}，必须是 600（chmod 600 ${POC_ENV}）"
   local v; v=$(sed -n 's/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}DEEPSEEK_API_KEY=//p' "$POC_ENV" | tail -1)
   v=${v%\"}; v=${v#\"}; v=${v%\'}; v=${v#\'}
-  [ -n "$v" ] || fail "$POC_ENV 里没有 DEEPSEEK_API_KEY=..."
+  [ -n "$v" ] || fail "${POC_ENV} 里没有 DEEPSEEK_API_KEY=..."
   export DEEPSEEK_API_KEY="$v"
 }
 load_apikey() { # backend
   local f; f=$(apikey_file "$1")
-  [ -s "$f" ] || fail "缺少 $f（先跑 setup $1）"
-  [ "$(file_mode "$f")" = 600 ] || fail "$f 权限不是 600"
+  [ -s "$f" ] || fail "缺少 ${f}（先跑 setup ${1}）"
+  [ "$(file_mode "$f")" = 600 ] || fail "${f} 权限不是 600"
   FASTCLAW_API_KEY=$(cat "$f"); export FASTCLAW_API_KEY
 }
 
@@ -66,41 +69,41 @@ step_precheck() {
   info "前置检查"
   [ "$(uname -s)" = Darwin ] || fail "不是 macOS"
   local arch ver major; arch=$(uname -m); ver=$(sw_vers -productVersion); major=${ver%%.*}
-  [ "$arch" = arm64 ] || fail "芯片为 $arch，BoxLite 仅支持 Apple Silicon"
-  [ "$major" -ge 12 ] || fail "macOS $ver < 12"
+  [ "$arch" = arm64 ] || fail "芯片为 ${arch}，BoxLite 仅支持 Apple Silicon"
+  [ "$major" -ge 12 ] || fail "macOS ${ver} < 12"
   [ "$(sysctl -n kern.hv_support)" = 1 ] || fail "kern.hv_support != 1（Hypervisor 不可用）"
   need curl; need python3; need tar; need lsof
   load_deepseek   # 仅检查文件与权限，不输出
   rec "macos=$ver arch=$arch cpu=$(sysctl -n machdep.cpu.brand_string | tr ' ' '_') mem_gb=$(( $(sysctl -n hw.memsize)/1073741824 ))"
-  pass "precheck macOS $ver / $arch / hv_support=1 / $POC_ENV 权限 600"
+  pass "precheck macOS ${ver} / ${arch} / hv_support=1 / ${POC_ENV} 权限 600"
 }
 
 # ---------------------------------------------------------------- install
 step_install() {
-  info "安装 BoxLite CLI 到 $BOXLITE_DIR（无 sudo）"
+  info "安装 BoxLite CLI 到 ${BOXLITE_DIR}（无 sudo）"
   mkdir -p "$BOXLITE_DIR" "$FASTCLAW_DIR"
   if ! [ -x "$BOXLITE_DIR/boxlite" ]; then
     # https://docs.boxlite.ai/getting-started/installation （变量必须放在 sh 一侧）
     curl -fsSL https://sh.boxlite.ai | env BOXLITE_INSTALL_DIR="$BOXLITE_DIR" ${BOXLITE_VERSION:+BOXLITE_VERSION=$BOXLITE_VERSION} sh \
-      >"$LOG_DIR/boxlite-install.log" 2>&1 || fail "BoxLite 安装失败，见 $LOG_DIR/boxlite-install.log"
+      >"$LOG_DIR/boxlite-install.log" 2>&1 || fail "BoxLite 安装失败，见 ${LOG_DIR}/boxlite-install.log"
   fi
   boxlite --version >/dev/null 2>&1 || fail "boxlite --version 失败"
   rec "boxlite_version=$(boxlite --version 2>&1 | head -1 | tr ' ' '_')"
   pass "boxlite 已安装"
 
-  info "安装 FastClaw $FASTCLAW_VERSION 到 $FASTCLAW_DIR"
+  info "安装 FastClaw ${FASTCLAW_VERSION} 到 ${FASTCLAW_DIR}"
   if ! { [ -x "$FASTCLAW_DIR/fastclaw" ] && "$FASTCLAW_DIR/fastclaw" version 2>/dev/null | grep -q "${FASTCLAW_VERSION#v}"; }; then
     # 资产名取自 v1.4.0 install.sh：fastclaw_${OS}_${ARCH}.tar.gz（darwin_arm64 待核实）
     local url="https://github.com/fastclaw-ai/fastclaw/releases/download/$FASTCLAW_VERSION/fastclaw_darwin_arm64.tar.gz"
     local tmp; tmp=$(mktemp -d)
-    curl -fsSL "$url" -o "$tmp/fc.tgz" || fail "下载失败 $url（排查：curl -s https://api.github.com/repos/fastclaw-ai/fastclaw/releases/tags/$FASTCLAW_VERSION | grep name）"
+    curl -fsSL "$url" -o "$tmp/fc.tgz" || fail "下载失败 ${url}（排查：curl -s https://api.github.com/repos/fastclaw-ai/fastclaw/releases/tags/${FASTCLAW_VERSION} | grep name）"
     tar -xzf "$tmp/fc.tgz" -C "$tmp"
     install -m 755 "$(find "$tmp" -type f -name fastclaw | head -1)" "$FASTCLAW_DIR/fastclaw"
     rm -rf "$tmp"
   fi
-  fastclaw version | grep -q "${FASTCLAW_VERSION#v}" || fail "fastclaw 版本不是 $FASTCLAW_VERSION"
+  fastclaw version | grep -q "${FASTCLAW_VERSION#v}" || fail "fastclaw 版本不是 ${FASTCLAW_VERSION}"
   rec "fastclaw_version=$(fastclaw version | head -1 | tr ' ' '_')"
-  pass "fastclaw $FASTCLAW_VERSION 已安装"
+  pass "fastclaw ${FASTCLAW_VERSION} 已安装"
   rec "install_size_boxlite=$(du -sh "$HOME/.local/opt/boxlite" | cut -f1) install_size_fastclaw=$(du -sh "$HOME/.local/opt/fastclaw" | cut -f1)"
   { echo '$ boxlite serve --help'; boxlite serve --help 2>&1 || true
     echo; echo '$ fastclaw --help'; fastclaw --help 2>&1 || true
@@ -109,18 +112,18 @@ step_install() {
 
 # ---------------------------------------------------------------- serve + WS probe
 step_serve() {
-  info "启动 boxlite serve（仅 127.0.0.1:$BOXLITE_PORT）"
+  info "启动 boxlite serve（仅 127.0.0.1:${BOXLITE_PORT}）"
   if ! curl -sS -o /dev/null -m 2 "http://127.0.0.1:$BOXLITE_PORT/" 2>/dev/null; then
     nohup boxlite serve --host 127.0.0.1 --port "$BOXLITE_PORT" >"$LOG_DIR/boxlite-serve.log" 2>&1 &
     echo $! >"$POC_HOME/boxlite.pid"
-    wait_http "http://127.0.0.1:$BOXLITE_PORT/" 20 || fail "boxlite serve 未起来，见 $LOG_DIR/boxlite-serve.log（flag 待核实：boxlite serve --help）"
+    wait_http "http://127.0.0.1:$BOXLITE_PORT/" 20 || fail "boxlite serve 未起来，见 ${LOG_DIR}/boxlite-serve.log（flag 待核实：boxlite serve --help）"
   fi
   lsof -nP -iTCP:"$BOXLITE_PORT" -sTCP:LISTEN | awk 'NR>1{print $9}' | grep -qv '^127\.0\.0\.1:' \
-    && fail "boxlite serve 监听了非回环地址（lsof -nP -iTCP:$BOXLITE_PORT -sTCP:LISTEN）"
-  pass "boxlite serve 只监听 127.0.0.1:$BOXLITE_PORT"
+    && fail "boxlite serve 监听了非回环地址（lsof -nP -iTCP:${BOXLITE_PORT} -sTCP:LISTEN）"
+  pass "boxlite serve 只监听 127.0.0.1:${BOXLITE_PORT}"
   local code; code=$(curl -sS -o "$LOG_DIR/probe-list.json" -w '%{http_code}' "http://127.0.0.1:$BOXLITE_PORT/v1/default/boxes" || true)
   rec "boxlite_rest_list_http=$code"
-  [ "$code" = 200 ] || fail "REST /v1/default/boxes 返回 $code（路径前缀待核实：curl -s http://127.0.0.1:$BOXLITE_PORT/openapi.json | head）"
+  [ "$code" = 200 ] || fail "REST /v1/default/boxes 返回 ${code}（路径前缀待核实：curl -s http://127.0.0.1:${BOXLITE_PORT}/openapi.json | head）"
   pass "REST /v1/default/boxes 可用"
 }
 
@@ -163,7 +166,7 @@ PY
   w1=$(now_ms); rec "boxlite_warm_exec_submit_ms=$((w1-w0))"
   curl -fsS -X DELETE "$base/boxes/$box?force=true" -o /dev/null || true
   grep -q 'handshake:.* 101 ' "$LOG_DIR/ws-probe.txt" && grep -q 'frames_with_marker: 3 /3' "$LOG_DIR/ws-probe.txt" \
-    || fail "WebSocket attach 不可用 —— 最大风险点命中（见 $LOG_DIR/ws-probe.txt）"
+    || fail "WebSocket attach 不可用 —— 最大风险点命中（见 ${LOG_DIR}/ws-probe.txt）"
   pass "WebSocket attach 流式输出 3/3"
 }
 
@@ -184,47 +187,47 @@ start_fastclaw() { # backend
   local backend=$1
   load_deepseek; fc_env "$backend"
   if curl -sS -o /dev/null -m 2 "http://127.0.0.1:$FASTCLAW_PORT/" 2>/dev/null; then
-    [ "$(cat "$POC_HOME/fastclaw.backend" 2>/dev/null)" = "$backend" ] || fail "端口 $FASTCLAW_PORT 已被其他 FastClaw 占用（先跑 cleanup-fastclaw）"
-    pass "FastClaw(backend=$backend) 已在运行"; return 0
+    [ "$(cat "$POC_HOME/fastclaw.backend" 2>/dev/null)" = "$backend" ] || fail "端口 ${FASTCLAW_PORT} 已被其他 FastClaw 占用（先跑 cleanup-fastclaw）"
+    pass "FastClaw(backend=${backend}) 已在运行"; return 0
   fi
   # `fastclaw` 无子命令即启动 gateway（FC:cmd/fastclaw/main.go:127）
   nohup fastclaw >"$LOG_DIR/fastclaw-$backend.log" 2>&1 &
   echo $! >"$POC_HOME/fastclaw.pid"; echo "$backend" >"$POC_HOME/fastclaw.backend"
-  wait_http "http://127.0.0.1:$FASTCLAW_PORT/" 30 || fail "FastClaw 未起来，见 $LOG_DIR/fastclaw-$backend.log"
-  pass "FastClaw 以 backend=$backend、ENFORCE=1 启动（未设置 FASTCLAW_ALLOW_HOST_EXEC）"
+  wait_http "http://127.0.0.1:$FASTCLAW_PORT/" 30 || fail "FastClaw 未起来，见 ${LOG_DIR}/fastclaw-${backend}.log"
+  pass "FastClaw 以 backend=${backend}、ENFORCE=1 启动（未设置 FASTCLAW_ALLOW_HOST_EXEC）"
 }
 
 # 配置 Agent（CLI，不走 /api/*）+ 生成 apikey（只写 600 文件）
 step_setup() { # backend
   local backend=$1 home kf out
   load_deepseek; fc_env "$backend"; home=$(home_for "$backend"); kf=$(apikey_file "$backend")
-  info "[$backend] agents init（DeepSeek，CLI：FC:cmd/fastclaw/cmd_agents.go）"
+  info "[${backend}] agents init（DeepSeek，CLI：FC:cmd/fastclaw/cmd_agents.go）"
   # --api-key-env 只写入变量名，密钥值由 gateway 进程环境提供；init 会在没有用户时创建 super_admin "admin"（生成的密码只进 600 日志，不进报告）
   fastclaw agents init "$AGENT" --provider deepseek --model "$MODEL" --api-key-env DEEPSEEK_API_KEY \
-    >"$home/agents-init.log" 2>&1 || fail "[$backend] agents init 失败（见 $home/agents-init.log）"
-  pass "[$backend] Agent $AGENT 已配置 provider=deepseek model=$MODEL"
+    >"$home/agents-init.log" 2>&1 || fail "[${backend}] agents init 失败（见 ${home}/agents-init.log）"
+  pass "[${backend}] Agent ${AGENT} 已配置 provider=deepseek model=${MODEL}"
   if [ "$backend" = docker ]; then
     # 沙箱网络：agent 作用域 setting（FC:internal/agentcli/agentcli.go settingKey，sandbox.* 为 agent scope）
     fastclaw agents config "$AGENT" set sandbox.network none >>"$home/agents-init.log" 2>&1 \
-      || fail "[$backend] 设置 sandbox.network=none 失败"
-    pass "[$backend] sandbox.network=none 已写入 Agent 配置（是否作用于系统沙箱池待核实，见验证 3）"
+      || fail "[${backend}] 设置 sandbox.network=none 失败"
+    pass "[${backend}] sandbox.network=none 已写入 Agent 配置（是否作用于系统沙箱池待核实，见验证 3）"
   fi
-  fastclaw agents doctor "$AGENT" >"$LOG_DIR/doctor-$backend.txt" 2>&1 || fail "[$backend] agents doctor 未通过（见 $LOG_DIR/doctor-$backend.txt）"
-  pass "[$backend] agents doctor 通过"
+  fastclaw agents doctor "$AGENT" >"$LOG_DIR/doctor-$backend.txt" 2>&1 || fail "[${backend}] agents doctor 未通过（见 ${LOG_DIR}/doctor-${backend}.txt）"
+  pass "[${backend}] agents doctor 通过"
 
-  info "[$backend] 生成 FastClaw apikey"
-  if [ -s "$kf" ]; then pass "[$backend] apikey 文件已存在（复用）"; return 0; fi
-  fastclaw apikey create --help >"$LOG_DIR/apikey-help-$backend.txt" 2>&1 || fail "[$backend] fastclaw apikey create --help 运行失败"
-  grep -q -- '--name' "$LOG_DIR/apikey-help-$backend.txt" || fail "[$backend] apikey create --help 中找不到 --name 参数，无法自动生成；请手动运行 fastclaw apikey create --help 并反馈输出"
+  info "[${backend}] 生成 FastClaw apikey"
+  if [ -s "$kf" ]; then pass "[${backend}] apikey 文件已存在（复用）"; return 0; fi
+  fastclaw apikey create --help >"$LOG_DIR/apikey-help-$backend.txt" 2>&1 || fail "[${backend}] fastclaw apikey create --help 运行失败"
+  grep -q -- '--name' "$LOG_DIR/apikey-help-$backend.txt" || fail "[${backend}] apikey create --help 中找不到 --name 参数，无法自动生成；请手动运行 fastclaw apikey create --help 并反馈输出"
   local args=(--name "heybe-poc-$backend")
   grep -q -- '--type' "$LOG_DIR/apikey-help-$backend.txt" && args+=(--type user)
   # 输出含 "token: <key>"：整段只在内存，提取后写 600 文件，不落终端/日志
-  out=$(fastclaw apikey create "${args[@]}" 2>&1) || { fail "[$backend] apikey create 失败（常见原因：无 super_admin，可用 fastclaw admin list-users 排查）"; }
+  out=$(fastclaw apikey create "${args[@]}" 2>&1) || { fail "[${backend}] apikey create 失败（常见原因：无 super_admin，可用 fastclaw admin list-users 排查）"; }
   ( umask 077; printf '%s' "$out" | sed -n 's/^token:[[:space:]]*//p' | head -1 | tr -d '\r\n' >"$kf" )
   out=""
-  [ -s "$kf" ] || { rm -f "$kf"; fail "[$backend] 未能从 apikey create 输出中解析 token（输出格式待核实）"; }
+  [ -s "$kf" ] || { rm -f "$kf"; fail "[${backend}] 未能从 apikey create 输出中解析 token（输出格式待核实）"; }
   chmod 600 "$kf"
-  pass "[$backend] apikey 已写入 $kf（600）"
+  pass "[${backend}] apikey 已写入 ${kf}（600）"
 }
 
 chat() { # backend prompt
@@ -251,29 +254,29 @@ PY
 # 三项验证分别记录；任何一项失败，整体返回失败，但三项都会跑完
 step_verify() { # backend
   local b=$1 log="$LOG_DIR/fastclaw-$1.log" out t0 t1 bad=0
-  [ "$(cat "$POC_HOME/fastclaw.backend" 2>/dev/null)" = "$b" ] || fail "[$b] 当前运行的 FastClaw 不是 $b 后端"
-  ( info "[$b] 验证 1：命令输出经沙箱流式取回"
+  [ "$(cat "$POC_HOME/fastclaw.backend" 2>/dev/null)" = "$b" ] || fail "[${b}] 当前运行的 FastClaw 不是 ${b} 后端"
+  ( info "[${b}] 验证 1：命令输出经沙箱流式取回"
     t0=$(now_ms)
-    out=$(chat "$b" 'Use the exec tool to run exactly: echo HEYBE_EXEC_$((40+2)) && uname -a . Reply with the raw tool output only.') || fail "[$b] /v1 调用失败"
+    out=$(chat "$b" 'Use the exec tool to run exactly: echo HEYBE_EXEC_$((40+2)) && uname -a . Reply with the raw tool output only.') || fail "[${b}] /v1 调用失败"
     t1=$(now_ms); rec "[$b] first_turn_ms=$((t1-t0))"
     echo "$out" >"$LOG_DIR/verify1-$b.txt"
-    grep -q 'HEYBE_EXEC_42' <<<"$out" || fail "[$b] 验证1 回复中无 HEYBE_EXEC_42"
-    grep -qi 'linux' <<<"$out" || fail "[$b] 验证1 uname 不是 Linux —— 命令可能跑在宿主上"
-    ! grep -qi 'boxlite attach\|attach read' "$log" || fail "[$b] 验证1 日志有 attach 错误"
-    pass "[$b] 验证1 exec 在 Linux 沙箱内执行并取回输出" ) || bad=1
-  ( info "[$b] 验证 2：读取宿主 ~/Documents 测试文件应失败"
+    grep -q 'HEYBE_EXEC_42' <<<"$out" || fail "[${b}] 验证1 回复中无 HEYBE_EXEC_42"
+    grep -qi 'linux' <<<"$out" || fail "[${b}] 验证1 uname 不是 Linux —— 命令可能跑在宿主上"
+    ! grep -qi 'boxlite attach\|attach read' "$log" || fail "[${b}] 验证1 日志有 attach 错误"
+    pass "[${b}] 验证1 exec 在 Linux 沙箱内执行并取回输出" ) || bad=1
+  ( info "[${b}] 验证 2：读取宿主 ~/Documents 测试文件应失败"
     local token; token="HEYBE_DOC_$(python3 -c 'import secrets;print(secrets.token_hex(6))')"
     mkdir -p "$HOME/Documents"; echo "$token" >"$SECRET_FILE"
-    out=$(chat "$b" "Use the exec tool to run: cat '$SECRET_FILE' ; ls -la '$HOME/Documents' . Reply with raw output.") || fail "[$b] /v1 调用失败"
+    out=$(chat "$b" "Use the exec tool to run: cat '$SECRET_FILE' ; ls -la '$HOME/Documents' . Reply with raw output.") || fail "[${b}] /v1 调用失败"
     echo "$out" >"$LOG_DIR/verify2-$b.txt"
-    ! grep -q "$token" <<<"$out" || fail "[$b] 验证2 沙箱读到了宿主文件！"
-    pass "[$b] 验证2 宿主 ~/Documents 不可见" ) || bad=1
-  ( info "[$b] 验证 3：非白名单出网应失败"
-    out=$(chat "$b" "Use the exec tool to run: curl -sS -m 8 -o /dev/null -w 'HTTP_%{http_code}' https://example.com || echo NET_BLOCKED . Reply with raw output.") || fail "[$b] /v1 调用失败"
+    ! grep -q "$token" <<<"$out" || fail "[${b}] 验证2 沙箱读到了宿主文件！"
+    pass "[${b}] 验证2 宿主 ~/Documents 不可见" ) || bad=1
+  ( info "[${b}] 验证 3：非白名单出网应失败"
+    out=$(chat "$b" "Use the exec tool to run: curl -sS -m 8 -o /dev/null -w 'HTTP_%{http_code}' https://example.com || echo NET_BLOCKED . Reply with raw output.") || fail "[${b}] /v1 调用失败"
     echo "$out" >"$LOG_DIR/verify3-$b.txt"
-    ! grep -q 'HTTP_200\|HTTP_30' <<<"$out" || fail "[$b] 验证3 出网未被拦截（boxlite：FastClaw 创建 box 不带 allow_net；docker：sandbox.network 可能未作用于系统池）"
-    pass "[$b] 验证3 出网被拦截" ) || bad=1
-  [ $bad = 0 ] || fail "[$b] verify 有失败项"
+    ! grep -q 'HTTP_200\|HTTP_30' <<<"$out" || fail "[${b}] 验证3 出网未被拦截（boxlite：FastClaw 创建 box 不带 allow_net；docker：sandbox.network 可能未作用于系统池）"
+    pass "[${b}] 验证3 出网被拦截" ) || bad=1
+  [ $bad = 0 ] || fail "[${b}] verify 有失败项"
 }
 
 step_metrics() {
@@ -290,24 +293,34 @@ step_metrics() {
 step_lima() {
   info "Lima 对照：vz + docker 模板"
   need brew
+  # limactl start 默认超时约 10 分钟；可用 LIMA_START_TIMEOUT 覆盖（传给 limactl --timeout，如 30m）
+  local lima_timeout="${LIMA_START_TIMEOUT:-30m}"
   brew list lima >/dev/null 2>&1 || brew install lima >"$LOG_DIR/brew-lima.log" 2>&1 || fail "brew install lima 失败"
   command -v docker >/dev/null || brew install docker >"$LOG_DIR/brew-docker.log" 2>&1 || fail "brew install docker（CLI）失败"
+  lima_start_fail() {
+    local log="$LOG_DIR/lima-start.log" hint=""
+    if grep -qiE 'guest clock|Time sync|did not receive an event with the running status' "$log" 2>/dev/null; then
+      hint="日志里有 guest clock / Time sync 或「did not receive an event with the running status」，多半是虚拟机启动超时或时间同步问题，不是密钥问题。"
+    fi
+    fail "limactl start 失败（超时 ${lima_timeout}）。${hint}见 ${log}。清理后重试：limactl delete -f ${LIMA_NAME}，然后重新跑 lima 或 all。可用 LIMA_START_TIMEOUT=45m 加长超时。"
+  }
   if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_NAME"; then
     local t0 t1; t0=$(now_ms)
-    limactl start --name="$LIMA_NAME" --vm-type=vz --tty=false template://docker >"$LOG_DIR/lima-start.log" 2>&1 \
-      || fail "limactl start 失败，见 $LOG_DIR/lima-start.log"
+    limactl start --name="$LIMA_NAME" --vm-type=vz --tty=false --timeout="$lima_timeout" template://docker \
+      >"$LOG_DIR/lima-start.log" 2>&1 || lima_start_fail
     t1=$(now_ms); rec "lima_cold_start_ms=$((t1-t0))"
   elif ! limactl list "$LIMA_NAME" | grep -q Running; then
-    local t0 t1; t0=$(now_ms); limactl start "$LIMA_NAME" --tty=false >>"$LOG_DIR/lima-start.log" 2>&1 || fail "limactl start 失败"
+    local t0 t1; t0=$(now_ms)
+    limactl start "$LIMA_NAME" --tty=false --timeout="$lima_timeout" >>"$LOG_DIR/lima-start.log" 2>&1 || lima_start_fail
     t1=$(now_ms); rec "lima_restart_ms=$((t1-t0))"
   fi
-  export DOCKER_HOST="unix://$HOME/.lima/$LIMA_NAME/sock/docker.sock"
-  docker info >/dev/null 2>&1 || fail "docker info 失败（DOCKER_HOST=$DOCKER_HOST；排查：limactl list; ls ~/.lima/$LIMA_NAME/sock）"
-  docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1 || docker pull "$SANDBOX_IMAGE" >"$LOG_DIR/docker-pull.log" 2>&1 || fail "拉取 $SANDBOX_IMAGE 失败"
+  export DOCKER_HOST="unix://${HOME}/.lima/${LIMA_NAME}/sock/docker.sock"
+  docker info >/dev/null 2>&1 || fail "docker info 失败（DOCKER_HOST=${DOCKER_HOST}；排查：limactl list; ls ~/.lima/${LIMA_NAME}/sock）"
+  docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1 || docker pull "$SANDBOX_IMAGE" >"$LOG_DIR/docker-pull.log" 2>&1 || fail "拉取 ${SANDBOX_IMAGE} 失败"
   local w0 w1; w0=$(now_ms); docker run --rm "$SANDBOX_IMAGE" true; w1=$(now_ms); rec "lima_warm_container_ms=$((w1-w0))"
   rec "lima_disk=$(du -sh "$HOME/.lima/$LIMA_NAME" | cut -f1) lima_install=$(du -shL "$(brew --prefix lima)" | cut -f1)"
   rec "lima_vm_rss_mb=$(ps -axo rss,command | awk '/limactl|vz|Virtualization/ {s+=$1} END {print int(s/1024)}')"
-  pass "Lima docker 可用：$DOCKER_HOST"
+  pass "Lima docker 可用：${DOCKER_HOST}"
 }
 
 # ---------------------------------------------------------------- cleanup
@@ -334,7 +347,7 @@ step_cleanup() {
 
 # ---------------------------------------------------------------- report（脱敏）
 step_report() {
-  info "生成 $REPORT"
+  info "生成 ${REPORT}"
   local raw="$POC_HOME/.report.raw"
   {
     echo "# Heybe 沙箱 PoC 报告"; echo; echo "生成时间：$(date '+%F %T %Z')；FastClaw $FASTCLAW_VERSION"; echo
