@@ -19,9 +19,9 @@
   // paste the id below, uncomment, then run:
   //   npx wrangler d1 execute heybe-waitlist --remote --file=schema.sql
   // Without this binding the site works and /api/waitlist answers 503 "waitlist_unavailable".
-  // "d1_databases": [
-  //   { "binding": "DB", "database_name": "heybe-waitlist", "database_id": "<id from wrangler d1 create>" }
-  // ],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "heybe-waitlist", "database_id": "acd2e25b-57db-4c71-9004-cbaa3b235661" }
+  ],
   // IP_SALT is a secret (random string) used to hash IPs for rate limiting:
   //   openssl rand -hex 16 | npx wrangler secret put IP_SALT
   "observability": { "enabled": true }
