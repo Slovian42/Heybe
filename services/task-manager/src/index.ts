@@ -26,3 +26,15 @@ export {
 export { MockExecutor, dispatchOnce, type DispatchOnceResult } from "./dispatch.js";
 export { startTaskHttpServer, stopTaskHttpServer } from "./http.js";
 export { DEFAULT_LEASE_MS, DEFAULT_WORKER_SLOTS, LOOPBACK_HOST } from "./constants.js";
+export {
+  ABORT_NOTE,
+  FastClawEventType,
+  FastClawNodeExecutor,
+  HEYBE_FASTCLAW_AGENT_ID,
+  HEYBE_FASTCLAW_TIMEOUT_MS,
+  cancelTaskLive,
+  defaultPrompt,
+  fastClawExecutorFromEnv,
+  sessionKeyFor,
+  type FastClawNodeExecutorOptions,
+} from "./fastclaw-executor.js";
