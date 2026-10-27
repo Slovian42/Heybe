@@ -19,6 +19,7 @@ export {
   CLAIM_NODE_SQL,
   applyExecutionResult,
   claimNextNode,
+  UNASSIGNED_AGENT_ID,
   type ApplyExecutionInput,
   type ClaimOptions,
   type ClaimedWork,
