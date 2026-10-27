@@ -49,7 +49,11 @@ start_gateway() {
     echo $! >"${LAB}/gw.pid"
   )
   local i
-  for i in $(seq 1 60); do curl -s -o /dev/null -m 1 "${BASE}/healthz" && return 0; sleep 0.5; done
+  for i in $(seq 1 60); do
+    kill -0 "$(gw_pid)" 2>/dev/null || { echo "gateway 进程启动后退出（端口被占？）" >&2; return 1; }
+    curl -s -o /dev/null -m 1 "${BASE}/healthz" && return 0
+    sleep 0.5
+  done
   echo "gateway 30 秒内没起来" >&2
   return 1
 }
@@ -62,11 +66,24 @@ stop_gateway() { # [signal]
   rm -f "${LAB}/gw.pid"
 }
 
+# `fastclaw agents init` 在 gateway 没运行时会自动拉起 `fastclaw daemon __run`（崩溃自动重启的守护进程）。
+# 实验要自己控制 gateway 进程，所以 init 之后立刻停掉它；清理时再按 FASTCLAW_HOME 兜底杀一遍（Linux /proc）。
+stop_daemon() {
+  fastclaw daemon stop >/dev/null 2>&1 || true
+  [ -d /proc ] || return 0
+  local p
+  for p in $(pgrep -f 'fastclaw (daemon __run|gateway)' 2>/dev/null || true); do
+    tr '\0' '\n' <"/proc/$p/environ" 2>/dev/null | grep -qx "FASTCLAW_HOME=${FASTCLAW_HOME}" && kill -9 "$p" 2>/dev/null
+  done
+  return 0
+}
+
 cleanup() {
   set +e
   stop_gateway
   local id
   for id in "${KEY_IDS[@]:-}"; do [ -n "$id" ] && fastclaw apikey delete --id "$id" >/dev/null 2>&1; done
+  stop_daemon
   if [ "${KEEP:-0}" = 1 ]; then rm -f "${LAB}"/key-* "${LAB}"/hdr-*; echo "保留目录 ${LAB}（apikey 已删）" >&2
   else rm -rf "${LAB}"; fi
 }
@@ -109,6 +126,8 @@ setup() {
   AGENT_ID="$(sed -n 's/^Agent ID:[[:space:]]*//p' "${LAB}/init.log" | head -1)"
   rm -f "${LAB}/init.log" # 含自动生成的控制台密码
   [ -n "${AGENT_ID}" ] || { echo "agents init 失败" >&2; exit 2; }
+  stop_daemon
+  local i; for i in $(seq 1 40); do curl -s -o /dev/null -m 1 "${BASE}/healthz" || break; sleep 0.25; done
   start_gateway
   new_key chat
   info setup "fastclaw=$(fastclaw version | head -1 | tr ' ' '_') agent=heybe-lab model=${MODEL} home=mktemp port=${PORT}"

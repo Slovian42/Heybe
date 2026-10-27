@@ -20,7 +20,7 @@
 
 1. **会话工作区只按 session key 落盘**：文件在 `workspaces/<agent>/sessions/<sessionKey>/…`，路径里没有 end-user。HTTP 下载有 end-user 校验（R3d），但**对话里的 `read_file` 没有**：同一 session key 换一个 end-user，模型能读到上一位写的文件（R4a）。
    → Heybe 的 session key 必须全局唯一、永不跨用户复用。现有 `sessionKeyFor({taskId,nodeId})` 已满足；不要用可猜测或可由外部输入拼出的 key。
-2. **`MEMORY.md` 走 Agent 共享目录**：对话里 `write_file MEMORY.md` 落在 `agents/<agent>/agent/MEMORY.md`（R4b），不在会话目录。另一会话、另一 end-user 能 `read_file` 读到（手工复现过一次暗号完整泄露；脚本里模型有时拒绝复述，所以 R4c 只记 INFO）。数据库里的按 chatter 记忆（`memory_search` 等）是另一套，按 chatter 分开。
+2. **`MEMORY.md` 走 Agent 共享目录**：对话里 `write_file MEMORY.md` 落在 `agents/<agent>/agent/MEMORY.md`（R4b），不在会话目录。另一会话、另一 end-user 能 `read_file` 读到（手工复现过一次暗号完整泄露，§4 这次运行 R4c 也复现了；模型有时拒绝复述，所以 R4c 读不到时只记 INFO，以 R4b 落盘位置为准）。数据库里的按 chatter 记忆（`memory_search` 等）是另一套，按 chatter 分开。
    → 同一 Agent 上的不同任务**不能**假设文件工具完全隔离。Heybe 的 Agent 指令里应禁止写 `MEMORY.md` / Agent 根目录；需要强隔离的任务用不同 Agent。
 
 ## 3. 观察到的工具事件名
@@ -44,13 +44,15 @@ LAB R3d PASS 其他 end-user GET 同一文件 → 404
 LAB R3e PASS 不带 end-user GET → 404
 LAB R4a RISK 同 session key、不同 end-user 的对话内 read_file 能读到上一位的会话文件（HTTP 下载有 end-user 校验，工具层没有）
 LAB R4b INFO 会话 lab:mem-1 写的 MEMORY.md 落盘位置：agents/<agent>/agent/MEMORY.md
-LAB R4c INFO 另一会话/end-user 的回复里没有暗号（模型可能拒绝复述；以 R4b 落盘位置为准）
+LAB R4c RISK 另一会话、另一 end-user 用 read_file 读到了 MEMORY.md 里的暗号（文件工具的 MEMORY.md 映射到 Agent 共享目录）
 LAB R5a PASS 响应 model 回显请求值
 LAB R5b PASS 上游请求 model=deepseek-v4-flash （Agent 配置），未被请求字段覆盖；对话 正常完成
 LAB RESULT: PASS
 ```
 
 用例依赖模型按要求调用工具或复述暗号；单次 FAIL 先看那一行的回复，再决定是否重跑。
+
+注意：`fastclaw agents init` 在 gateway 没运行时会自动拉起 `fastclaw daemon __run`（崩溃后自动重启 gateway 的守护进程）。脚本在 init 后立刻 `fastclaw daemon stop`，清理时再按 `FASTCLAW_HOME` 兜底结束残留进程，保证用例打到的是脚本自己启动的 gateway、跑完不留进程。
 
 ## 5. 未覆盖
 
