@@ -7,7 +7,7 @@
 | 变量 | 含义 |
 |---|---|
 | `HEYBE_FASTCLAW_BASE_URL` | 例 `http://127.0.0.1:18953` |
-| `HEYBE_FASTCLAW_TOKEN` | FastClaw API key（Bearer） |
+| `HEYBE_FASTCLAW_CHAT_TOKEN` | FastClaw 对话 API key（Bearer；非 owner。旧名 `HEYBE_FASTCLAW_TOKEN` 仍兼容） |
 
 可选：`HEYBE_FASTCLAW_AGENT_ID`、`HEYBE_POC_PROBE_MODEL`（默认 `heybe-probe-model-echo`）、`HEYBE_POC_PROMPT`。
 
@@ -38,10 +38,10 @@ fastclaw agents init
 security add-generic-password -s heybe-fastclaw -a "$USER" -w   # 交互输入
 
 export HEYBE_FASTCLAW_BASE_URL=http://127.0.0.1:18953
-export HEYBE_FASTCLAW_TOKEN="$(security find-generic-password -s heybe-fastclaw -w)"
+export HEYBE_FASTCLAW_CHAT_TOKEN="$(security find-generic-password -s heybe-fastclaw-chat -w)"
 ```
 
-Linux / 临时 shell：直接 `export HEYBE_FASTCLAW_TOKEN=…`（会话级），结束后 `unset`。
+Linux / 临时 shell：直接 `export HEYBE_FASTCLAW_CHAT_TOKEN=…`（会话级），结束后 `unset`。
 
 ## 2. 跑脚本
 
