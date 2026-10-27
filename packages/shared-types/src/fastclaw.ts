@@ -23,6 +23,21 @@ export interface V1Agent {
   updated_at: string;
 }
 
+/** POST /v1/agents body (`createAgentRequest` in internal/api/agents.go). */
+export interface V1CreateAgentRequest {
+  name: string;
+  description?: string;
+  instructions?: string;
+  model?: string;
+  metadata?: Record<string, string>;
+}
+
+/** DELETE /v1/agents/{id} body. */
+export interface V1AgentDeleted {
+  id: string;
+  deleted: true;
+}
+
 /** GET /v1/agents body. Newest first. */
 export interface V1AgentList {
   agents: V1Agent[];

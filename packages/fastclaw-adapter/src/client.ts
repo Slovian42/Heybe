@@ -5,12 +5,18 @@ import type {
   FastClawSession,
   V1Agent,
   V1AgentList,
+  V1AgentDeleted,
+  V1CreateAgentRequest,
   V1ChatCompletion,
   V1ChatMessage,
   V1ChatRequest,
   V1StreamEvent,
 } from "@heybe/shared-types";
-import { loadFastClawClientConfig, type FastClawClientConfig } from "./config.js";
+import {
+  loadFastClawClientConfig,
+  type FastClawClientConfig,
+  type FastClawClientRole,
+} from "./config.js";
 import { FastClawConfigError, FastClawError } from "./errors.js";
 import {
   assertSegment,
@@ -43,13 +49,30 @@ export const FASTCLAW_V1_CLIENT_ROUTES = [
   "GET /v1/agents/{id}/sessions/{session}/files/{path}",
 ] as const;
 
+/**
+ * Extra routes only an `admin` client may call (owner key, task manager only).
+ * A `chat` client is refused locally before any request is sent.
+ */
+export const FASTCLAW_V1_ADMIN_ROUTES = ["POST /v1/agents", "DELETE /v1/agents/{id}"] as const;
+
 export interface FastClawClientOptions {
   baseUrl: string;
   /**
-   * Bearer token from HEYBE_FASTCLAW_TOKEN (or the keychain).
-   * Stored privately and redacted from errors. Never log it.
+   * Bearer token from HEYBE_FASTCLAW_CHAT_TOKEN / HEYBE_FASTCLAW_ADMIN_TOKEN
+   * (or the keychain). Stored privately and redacted from errors. Never log it.
    */
   token: string;
+  /**
+   * `chat` (default): chat + reads; mutating /v1/agents* is refused locally.
+   * `admin`: create/delete Agents + reads; chat is refused locally.
+   * FastClaw v1.4.0 does not enforce this split for `type=user` keys; it is a Heybe-side guard.
+   */
+  role?: FastClawClientRole;
+  /**
+   * Default end-user for sessions and file downloads on a chat client.
+   * Sent as `X-Fastclaw-End-User` and body `user`.
+   */
+  endUser?: string;
   fetchImpl?: typeof fetch;
   /** Header timeout for every call, and body timeout for JSON/bytes. Default 30000. 0 disables. */
   timeoutMs?: number;
@@ -125,9 +148,19 @@ function asRecord(value: unknown, method: string, path: string): Record<string, 
   return value as Record<string, unknown>;
 }
 
+export interface CreateAgentInput extends CallOptions {
+  name: string;
+  description?: string;
+  instructions?: string;
+  model?: string;
+  metadata?: Record<string, string>;
+}
+
 export class FastClawClient {
   readonly baseUrl: string;
+  readonly role: FastClawClientRole;
   readonly #token: string;
+  readonly #endUser: string | undefined;
   readonly #fetch: typeof fetch;
   readonly #timeoutMs: number | undefined;
   readonly #retry: ResolvedRetry;
@@ -139,20 +172,23 @@ export class FastClawClient {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
     if (!this.baseUrl) throw new FastClawConfigError(["baseUrl"]);
     this.#token = token;
+    this.role = opts.role ?? "chat";
+    if (this.role !== "chat" && this.role !== "admin") throw new FastClawConfigError(["role"]);
+    this.#endUser = optionalHeader(opts.endUser, "end user");
     this.#fetch = opts.fetchImpl ?? fetch;
     this.#timeoutMs = resolveTimeout(opts.timeoutMs, DEFAULT_TIMEOUT_MS);
     this.#retry = resolveRetry(opts.retry);
     this.#sleepImpl = opts.sleep;
   }
 
-  toJSON(): { baseUrl: string } {
-    return { baseUrl: this.baseUrl };
+  toJSON(): { baseUrl: string; role: FastClawClientRole } {
+    return { baseUrl: this.baseUrl, role: this.role };
   }
 
   [Symbol.for("nodejs.util.inspect.custom")](depth: number, options: InspectOptions): string {
     void depth;
     void options;
-    return `FastClawClient { baseUrl: ${inspect(this.baseUrl)} }`;
+    return `FastClawClient { baseUrl: ${inspect(this.baseUrl)}, role: ${inspect(this.role)} }`;
   }
 
   /**
@@ -213,9 +249,56 @@ export class FastClawClient {
     if (/[\r\n]/.test(sessionKey) || sessionKey.length > 512) {
       throw invalidRequest("POST", "/v1/chat/completions", "Invalid session key");
     }
-    const endUser = optionalHeader(input.endUser, "end user");
+    const endUser = optionalHeader(input.endUser, "end user") ?? this.#endUser;
     const projectId = optionalHeader(input.projectId, "project id");
     return { agentId, sessionKey, endUser, projectId };
+  }
+
+  /**
+   * Create an Agent (admin client only). POST /v1/agents.
+   * The Agent belongs to the key's owner account.
+   */
+  async createAgent(input: CreateAgentInput): Promise<V1Agent> {
+    const path = "/v1/agents";
+    const name = input.name?.trim() ?? "";
+    if (!name) throw invalidRequest("POST", path, "Agent name is required");
+    const body: V1CreateAgentRequest = { name };
+    if (input.description !== undefined) body.description = input.description;
+    if (input.instructions !== undefined) body.instructions = input.instructions;
+    if (input.model !== undefined) body.model = input.model;
+    if (input.metadata !== undefined) body.metadata = input.metadata;
+    const payload = await this.request<unknown>("POST", path, body, input);
+    const agent = asRecord(payload, "POST", path).agent;
+    if (!agent || typeof agent !== "object" || typeof (agent as V1Agent).id !== "string") {
+      throw new FastClawError({
+        kind: "5xx",
+        status: 200,
+        method: "POST",
+        path,
+        code: "invalid_response",
+        message: "FastClaw POST /v1/agents returned an unexpected payload",
+      });
+    }
+    return agent as V1Agent;
+  }
+
+  /** Delete an Agent (admin client only). DELETE /v1/agents/{id}. */
+  async deleteAgent(id: string, init?: CallOptions): Promise<V1AgentDeleted> {
+    const agentId = assertSegment(id, "agent id", "DELETE", "/v1/agents");
+    const path = `/v1/agents/${encodeURIComponent(agentId)}`;
+    const payload = await this.request<unknown>("DELETE", path, undefined, init);
+    const record = asRecord(payload, "DELETE", path);
+    if (record.deleted !== true) {
+      throw new FastClawError({
+        kind: "5xx",
+        status: 200,
+        method: "DELETE",
+        path,
+        code: "invalid_response",
+        message: `FastClaw DELETE ${path} returned an unexpected payload`,
+      });
+    }
+    return { id: typeof record.id === "string" ? record.id : agentId, deleted: true };
   }
 
   /** Non-streaming chat on an existing session handle. */
@@ -313,7 +396,7 @@ export class FastClawClient {
   async getSessionFile(input: GetSessionFileInput): Promise<FastClawFileDownload> {
     const path = sessionFilePath(input.agentId, input.sessionKey, input.path, input.projectId);
     const headers: Record<string, string> = {};
-    const endUser = optionalHeader(input.endUser, "end user");
+    const endUser = optionalHeader(input.endUser, "end user") ?? this.#endUser;
     if (endUser) headers["X-Fastclaw-End-User"] = endUser;
     const res = await this.#send("GET", path, { ...input, headers });
     const bytes = new Uint8Array(await res.arrayBuffer());
@@ -354,6 +437,7 @@ export class FastClawClient {
   async #send(method: string, path: string, init: SendOptions = {}): Promise<Response> {
     const verb = method.toUpperCase();
     assertV1Path(path);
+    assertRoleAllows(this.role, verb, path);
     const headers = this.#headers(verb, init.headers, init.body !== undefined);
     const timeoutMs = resolveTimeout(init.timeoutMs, this.#timeoutMs);
     let lastError: FastClawError | undefined;
@@ -513,6 +597,32 @@ export class FastClawClient {
   }
 }
 
+/**
+ * Local role guard, checked before any request leaves the process.
+ * chat: GET + POST /v1/chat/completions. admin: GET + POST /v1/agents + DELETE /v1/agents/{id}.
+ */
+function assertRoleAllows(role: FastClawClientRole, method: string, path: string): void {
+  if (method === "GET" || method === "HEAD") return;
+  const pathname = path.split("?")[0] ?? path;
+  const allowed =
+    role === "chat"
+      ? method === "POST" && pathname === "/v1/chat/completions"
+      : (method === "POST" && pathname === "/v1/agents") ||
+        (method === "DELETE" && /^\/v1\/agents\/[^/]+$/.test(pathname));
+  if (allowed) return;
+  throw new FastClawError({
+    kind: "4xx",
+    status: 403,
+    method,
+    path: pathname,
+    code: "role_forbidden",
+    message:
+      role === "chat"
+        ? `FastClaw ${method} ${pathname} refused locally: the chat key may not manage Agents (use the task manager admin client)`
+        : `FastClaw ${method} ${pathname} refused locally: the admin key is only for creating/deleting Agents`,
+  });
+}
+
 function errorName(err: unknown): string {
   if (err instanceof Error) return err.name === "Error" || err.name === "TypeError" ? `${err.name}: ${err.message}` : err.name;
   return typeof err;
@@ -598,8 +708,26 @@ function agentListPath(options: ListAgentsOptions): string {
 
 export function fastClawClientFromEnv(
   env: Record<string, string | undefined> = process.env,
-  overrides: Partial<Omit<FastClawClientOptions, "baseUrl" | "token">> = {},
+  overrides: Partial<Omit<FastClawClientOptions, "baseUrl" | "token" | "role">> = {},
 ): FastClawClient {
-  const config: FastClawClientConfig = loadFastClawClientConfig(env);
-  return new FastClawClient({ ...overrides, baseUrl: config.baseUrl, token: config.token });
+  const config: FastClawClientConfig = loadFastClawClientConfig(env, { role: "chat" });
+  return new FastClawClient({
+    ...overrides,
+    baseUrl: config.baseUrl,
+    token: config.token,
+    role: "chat",
+    endUser: overrides.endUser ?? config.endUser,
+  });
+}
+
+/**
+ * Admin client from HEYBE_FASTCLAW_BASE_URL + HEYBE_FASTCLAW_ADMIN_TOKEN (owner key).
+ * Task manager only. It cannot chat.
+ */
+export function fastClawAdminClientFromEnv(
+  env: Record<string, string | undefined> = process.env,
+  overrides: Partial<Omit<FastClawClientOptions, "baseUrl" | "token" | "role" | "endUser">> = {},
+): FastClawClient {
+  const config = loadFastClawClientConfig(env, { role: "admin" });
+  return new FastClawClient({ ...overrides, baseUrl: config.baseUrl, token: config.token, role: "admin" });
 }

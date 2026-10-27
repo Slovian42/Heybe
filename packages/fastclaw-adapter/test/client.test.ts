@@ -360,7 +360,7 @@ describe("configuration and token handling", () => {
   });
 
   it("names missing variables and never echoes the token", () => {
-    expect(() => loadFastClawClientConfig({ HEYBE_FASTCLAW_BASE_URL: "http://127.0.0.1:18953" })).toThrow(/HEYBE_FASTCLAW_TOKEN/);
+    expect(() => loadFastClawClientConfig({ HEYBE_FASTCLAW_BASE_URL: "http://127.0.0.1:18953" })).toThrow(/HEYBE_FASTCLAW_CHAT_TOKEN/);
     const embedded = `http://127.0.0.1/${TOKEN}`;
     try {
       loadFastClawClientConfig({ HEYBE_FASTCLAW_BASE_URL: embedded, HEYBE_FASTCLAW_TOKEN: TOKEN });
