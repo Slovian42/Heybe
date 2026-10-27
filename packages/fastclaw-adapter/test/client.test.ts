@@ -414,3 +414,34 @@ function sseStream(chunks: string[]): ReadableStream<Uint8Array> {
     },
   });
 }
+
+describe("streamMessage abort during body", () => {
+  it("drops the connection when the caller aborts after headers arrived", async () => {
+    const enc = new TextEncoder();
+    let bodySignal: AbortSignal | undefined;
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bodySignal = init?.signal ?? undefined;
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "a" } }] })}\n\n`));
+          init?.signal?.addEventListener("abort", () => c.error(new DOMException("aborted", "AbortError")));
+        },
+      });
+      return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    }) as typeof fetch;
+    const c = client({ fetchImpl, retry: { maxAttempts: 1 } });
+    const session = c.createSession({ agentId: "agt_1", sessionKey: "s" });
+    const controller = new AbortController();
+    const seen: string[] = [];
+    await expect(
+      (async () => {
+        for await (const event of c.streamMessage(session, { messages: [{ role: "user", content: "go" }], signal: controller.signal })) {
+          seen.push(event.type);
+          controller.abort();
+        }
+      })(),
+    ).rejects.toBeTruthy();
+    expect(seen).toEqual(["delta"]);
+    expect(bodySignal?.aborted).toBe(true);
+  });
+});

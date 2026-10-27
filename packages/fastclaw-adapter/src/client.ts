@@ -99,6 +99,8 @@ export interface GetSessionFileInput extends CallOptions {
 
 interface SendOptions extends CallOptions {
   body?: unknown;
+  /** Keep the caller's signal wired to the response body (SSE). */
+  keepSignalForBody?: boolean;
 }
 
 function resolveTimeout(ms: number | undefined, fallback: number | undefined): number | undefined {
@@ -253,6 +255,7 @@ export class FastClawClient {
       ...input,
       headers: { ...sessionHeaders(session), Accept: "text/event-stream" },
       body: chatBody(session, input, true),
+      keepSignalForBody: true,
     });
     const contentType = res.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
@@ -347,7 +350,7 @@ export class FastClawClient {
       }
       let error: FastClawError | undefined;
       try {
-        const res = await this.#fetchOnce(verb, path, headers, init.body, timeoutMs, init.signal);
+        const res = await this.#fetchOnce(verb, path, headers, init.body, timeoutMs, init.signal, init.keepSignalForBody);
         if (res.status >= 300 && res.status < 400) {
           await drain(res);
           error = new FastClawError({
@@ -383,6 +386,7 @@ export class FastClawClient {
     body: unknown,
     timeoutMs: number | undefined,
     signal: AbortSignal | undefined,
+    keepSignalForBody = false,
   ): Promise<Response> {
     const controller = new AbortController();
     let timedOut = false;
@@ -398,8 +402,9 @@ export class FastClawClient {
       if (signal.aborted) controller.abort();
       else signal.addEventListener("abort", onAbort, { once: true });
     }
+    let keepListener = false;
     try {
-      return await this.#fetch(this.baseUrl + path, {
+      const res = await this.#fetch(this.baseUrl + path, {
         method,
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -407,6 +412,9 @@ export class FastClawClient {
         redirect: "manual",
         cache: "no-store",
       });
+      // Streaming: the caller's abort must still drop the connection while the body is read.
+      keepListener = keepSignalForBody && !!signal && !signal.aborted;
+      return res;
     } catch (err) {
       if (timedOut) {
         throw new FastClawError({
@@ -420,7 +428,7 @@ export class FastClawClient {
       throw this.#networkError(err, method, path);
     } finally {
       if (timer) clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
+      if (!keepListener) signal?.removeEventListener("abort", onAbort);
     }
   }
 
