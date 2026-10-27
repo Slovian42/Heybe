@@ -162,7 +162,22 @@ function decodeId(raw: string): string {
   return id;
 }
 
-async function handle(db: Database.Database, req: IncomingMessage, res: ServerResponse): Promise<void> {
+export interface TaskHttpOptions {
+  port?: number;
+  host?: string;
+  /**
+   * Called after a task is cancelled; should drop in-flight executor connections
+   * (e.g. FastClawNodeExecutor.abortTask) and return how many were aborted.
+   */
+  onCancel?: (taskId: string) => number;
+}
+
+async function handle(
+  db: Database.Database,
+  req: IncomingMessage,
+  res: ServerResponse,
+  opts: TaskHttpOptions = {},
+): Promise<void> {
   const url = new URL(req.url ?? "/", `http://${LOOPBACK_HOST}`);
   const method = req.method ?? "GET";
   const tasks = new TaskRepository(db);
@@ -195,8 +210,12 @@ async function handle(db: Database.Database, req: IncomingMessage, res: ServerRe
     const parsed = raw.length === 0 ? {} : asRecord(JSON.parse(raw) as unknown, "body");
     const reason = optionalString(parsed.reason, "reason");
     const task = tasks.cancel(id, { reason });
+    const aborted = opts.onCancel ? opts.onCancel(id) : 0;
     sendJson(res, 200, {
       task,
+      aborted,
+      // FastClaw v1.4.0 has no /v1 stop: dropping the connection does not prove the run stopped.
+      serverStopped: aborted > 0 ? "unknown" : null,
       nodes: nodes.listByTask(id),
       events: events.listByTask(id),
       dispatch: "stopped",
@@ -213,14 +232,14 @@ async function handle(db: Database.Database, req: IncomingMessage, res: ServerRe
 
 export function startTaskHttpServer(
   db: Database.Database,
-  opts: { port?: number; host?: string } = {},
+  opts: TaskHttpOptions = {},
 ): Promise<Server> {
   const host = opts.host ?? LOOPBACK_HOST;
   if (host !== LOOPBACK_HOST) {
     return Promise.reject(new Error(`task manager HTTP server only listens on ${LOOPBACK_HOST}`));
   }
   const server = http.createServer((req, res) => {
-    void handle(db, req, res).catch((error: unknown) => {
+    void handle(db, req, res, opts).catch((error: unknown) => {
       if (res.headersSent) {
         res.destroy();
         return;
