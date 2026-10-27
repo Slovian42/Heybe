@@ -17,16 +17,18 @@ import {
   sessionKeyFor,
   TOOL_ALERT_NOTE,
   fastClawAgentAdminFromEnv,
+  TRUNCATED_NOTE,
 } from "../src/index.js";
 
 const TOKEN = "fc_test_token_do_not_log";
 
-function sse(chunks: unknown[], opts: { hang?: boolean } = {}): Response {
+function sse(chunks: unknown[], opts: { hang?: boolean; truncate?: boolean } = {}): Response {
   const enc = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
     start(c) {
       for (const ch of chunks) c.enqueue(enc.encode(`data: ${JSON.stringify(ch)}\n\n`));
-      if (!opts.hang) {
+      if (opts.truncate) c.close();
+      else if (!opts.hang) {
         c.enqueue(enc.encode("data: [DONE]\n\n"));
         c.close();
       }
@@ -122,6 +124,21 @@ describe("FastClawNodeExecutor", () => {
     expect(ev?.data).toMatchObject({ note: ABORT_NOTE, serverStopped: "unknown" });
     const next = await dispatchOnce(db, executor, { owner: "sched", agentId: "agent-1" });
     expect(next.claimed).toBe(false);
+    db.close();
+  });
+
+  it("maps a stream cut off before [DONE] (gateway restart, #9) to needs_check, not awaiting_review", async () => {
+    const { db, executor } = setup(() => sse([delta("写到一半")], { truncate: true }));
+    const { task } = new TaskRepository(db).create({ goal: "g", nodes: [{ id: "n1" }] });
+    const r = await dispatchOnce(db, executor, { owner: "sched", agentId: "agent-1" });
+    if (!r.claimed) throw new Error("expected claim");
+    expect(r.result.outcome).toBe("needs_check");
+    expect(r.result.error).toBe(TRUNCATED_NOTE);
+    expect(new NodeRepository(db).get("n1")?.status).toBe("needs_check");
+    const events = new EventRepository(db).listByTask(task.id);
+    expect(events.some((e) => e.type === FastClawEventType.StreamDone)).toBe(false);
+    const ev = events.find((e) => e.type === FastClawEventType.StreamError);
+    expect(ev?.data).toMatchObject({ kind: "network", code: "stream_truncated", chars: 4, serverStopped: "unknown", note: TRUNCATED_NOTE });
     db.close();
   });
 

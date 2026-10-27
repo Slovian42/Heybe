@@ -34,7 +34,7 @@ import {
   type ResolvedRetry,
   type RetryOptions,
 } from "./retry.js";
-import { parseChatSse, SseParseError, sseFailure } from "./sse.js";
+import { parseChatSse, SseParseError, SseTruncatedError, sseFailure } from "./sse.js";
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -375,7 +375,20 @@ export class FastClawClient {
           message: "FastClaw POST /v1/chat/completions failed (5xx): invalid_response",
         });
       }
-      throw err;
+      if (input.signal?.aborted) throw err;
+      // Body ended without [DONE], or the socket died mid-body (undici "terminated" etc.):
+      // the gateway stopped / restarted or the connection broke. Server-side outcome unknown (#9).
+      const cause =
+        err instanceof SseTruncatedError
+          ? "ended before [DONE]"
+          : `body read failed (${redactSecrets(errorName(err), [this.#token]).slice(0, 80)})`;
+      throw new FastClawError({
+        kind: "network",
+        method: "POST",
+        path,
+        code: "stream_truncated",
+        message: `FastClaw POST /v1/chat/completions stream was cut off: ${cause}`,
+      });
     }
   }
 
@@ -608,6 +621,11 @@ function assertRoleAllows(role: FastClawClientRole, method: string, path: string
         ? `FastClaw ${method} ${pathname} refused locally: the chat key may not manage Agents (use the task manager admin client)`
         : `FastClaw ${method} ${pathname} refused locally: the admin key is only for creating/deleting Agents`,
   });
+}
+
+function errorName(err: unknown): string {
+  if (err instanceof Error) return err.name === "Error" || err.name === "TypeError" ? `${err.name}: ${err.message}` : err.name;
+  return typeof err;
 }
 
 function aborted(method: string, path: string): FastClawError {

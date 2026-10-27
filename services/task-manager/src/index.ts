@@ -32,6 +32,7 @@ export { FastClawAgentAdmin, fastClawAgentAdminFromEnv } from "./fastclaw-agent-
 export {
   ABORT_NOTE,
   FASTCLAW_ALERT_TOOL_NAMES,
+  TRUNCATED_NOTE,
   FastClawEventType,
   FastClawNodeExecutor,
   HEYBE_FASTCLAW_AGENT_ID,
