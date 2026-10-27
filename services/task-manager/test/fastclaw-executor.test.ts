@@ -4,6 +4,8 @@ import { FastClawClient, FastClawConfigError } from "@heybe/fastclaw-adapter";
 import {
   ABORT_NOTE,
   EventRepository,
+  FASTCLAW_ALERT_TOOL_NAMES,
+  FastClawAgentAdmin,
   FastClawEventType,
   FastClawNodeExecutor,
   NodeRepository,
@@ -13,6 +15,8 @@ import {
   fastClawExecutorFromEnv,
   openTaskDb,
   sessionKeyFor,
+  TOOL_ALERT_NOTE,
+  fastClawAgentAdminFromEnv,
 } from "../src/index.js";
 
 const TOKEN = "fc_test_token_do_not_log";
@@ -139,5 +143,82 @@ describe("FastClawNodeExecutor", () => {
       fastClawExecutorFromEnv(db, { HEYBE_FASTCLAW_BASE_URL: "http://127.0.0.1:18953", HEYBE_FASTCLAW_TOKEN: TOKEN, HEYBE_FASTCLAW_TIMEOUT_MS: "x" }),
     ).toThrow(FastClawConfigError);
     db.close();
+  });
+
+  it("writes an alert and routes to needs_check when an Agent-admin tool shows up", async () => {
+    const { db, executor } = setup(() =>
+      sse([
+        { choices: [], tool: { id: "c1", name: "create_agent", status: "running" } },
+        { choices: [], tool: { id: "c1", name: "create_agent", status: "done" } },
+        { choices: [], tool: { id: "c2", name: "read_file", status: "running" } },
+        delta("被拒绝了"),
+        stop,
+      ]),
+    );
+    new TaskRepository(db).create({ goal: "g", nodes: [{ id: "n1" }] });
+    const r = await dispatchOnce(db, executor, { owner: "sched", agentId: "agent-1" });
+    if (!r.claimed) throw new Error("expected claim");
+    expect(r.result.outcome).toBe("needs_check");
+    expect(r.result.error).toBe(TOOL_ALERT_NOTE);
+    const events = new EventRepository(db).listByTask(r.request.taskId);
+    const alerts = events.filter((e) => e.type === FastClawEventType.ToolAlert);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.data).toMatchObject({ id: "c1", name: "create_agent", status: "running", note: TOOL_ALERT_NOTE });
+    expect(events.filter((e) => e.type === FastClawEventType.Tool)).toHaveLength(3);
+    db.close();
+  });
+
+  it("does not alert on ordinary tools", async () => {
+    const { db, executor } = setup(() => sse([{ choices: [], tool: { id: "t", name: "write_file", status: "running" } }, stop]));
+    new TaskRepository(db).create({ goal: "g", nodes: [{ id: "n1" }] });
+    const r = await dispatchOnce(db, executor, { owner: "sched", agentId: "agent-1" });
+    if (!r.claimed) throw new Error("expected claim");
+    expect(r.result.outcome).toBe("awaiting_review");
+    expect(new EventRepository(db).listByTask(r.request.taskId).some((e) => e.type === FastClawEventType.ToolAlert)).toBe(false);
+    for (const name of ["create_agent", "configure_agent", "delete_agent", "spawn_subagent", "delegate_task"]) {
+      expect(FASTCLAW_ALERT_TOOL_NAMES.has(name)).toBe(true);
+    }
+    db.close();
+  });
+
+  it("chat executor uses the chat key and end-user, never the admin key", async () => {
+    const db = openTaskDb(":memory:");
+    const ADMIN = "fc_admin_token_do_not_log";
+    const ex = fastClawExecutorFromEnv(db, {
+      HEYBE_FASTCLAW_BASE_URL: "http://127.0.0.1:18953",
+      HEYBE_FASTCLAW_CHAT_TOKEN: TOKEN,
+      HEYBE_FASTCLAW_ADMIN_TOKEN: ADMIN,
+    });
+    expect(ex).toBeInstanceOf(FastClawNodeExecutor);
+    expect(() =>
+      fastClawExecutorFromEnv(db, { HEYBE_FASTCLAW_BASE_URL: "http://127.0.0.1:18953", HEYBE_FASTCLAW_ADMIN_TOKEN: ADMIN }),
+    ).toThrow(/HEYBE_FASTCLAW_CHAT_TOKEN/);
+    db.close();
+  });
+
+  it("agent admin needs the admin key and an admin-role client", async () => {
+    expect(() => fastClawAgentAdminFromEnv({ HEYBE_FASTCLAW_BASE_URL: "http://127.0.0.1:18953", HEYBE_FASTCLAW_CHAT_TOKEN: TOKEN })).toThrow(
+      /HEYBE_FASTCLAW_ADMIN_TOKEN/,
+    );
+    const chatClient = new FastClawClient({ baseUrl: "http://127.0.0.1:18953", token: TOKEN });
+    expect(() => new FastClawAgentAdmin(chatClient)).toThrow(FastClawConfigError);
+    const calls: string[] = [];
+    const admin = new FastClawAgentAdmin(
+      new FastClawClient({
+        baseUrl: "http://127.0.0.1:18953",
+        token: "fc_admin_token_do_not_log",
+        role: "admin",
+        fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
+          calls.push(`${init?.method} ${new URL(String(url)).pathname}`);
+          return new Response(JSON.stringify(init?.method === "DELETE" ? { id: "agt_9", deleted: true } : { agent: { id: "agt_9" } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }) as typeof fetch,
+      }),
+    );
+    await expect(admin.createAgent({ name: "heybe-default" })).resolves.toMatchObject({ id: "agt_9" });
+    await expect(admin.deleteAgent("agt_9")).resolves.toEqual({ id: "agt_9", deleted: true });
+    expect(calls).toEqual(["POST /v1/agents", "DELETE /v1/agents/agt_9"]);
   });
 });

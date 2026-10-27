@@ -53,8 +53,11 @@
    API key：控制台 → API Keys 创建一次（只显示一次），存入钥匙串：
    `security add-generic-password -s heybe-fastclaw -a "$USER" -w`（交互输入，不进 shell 历史），
    使用时 `export FASTCLAW_API_KEY=$(security find-generic-password -s heybe-fastclaw -w)`。
-   Heybe 适配层不读 `FASTCLAW_API_KEY`。它只读 `HEYBE_FASTCLAW_BASE_URL` 和 `HEYBE_FASTCLAW_TOKEN`
-   （可把同一把钥匙串里的值赋给后者），并且不会把 token 写进日志。见 `.env.example`。
+   Heybe 适配层不读 `FASTCLAW_API_KEY`。它读 `HEYBE_FASTCLAW_BASE_URL`、对话用的
+   `HEYBE_FASTCLAW_CHAT_TOKEN`（非 owner key，推荐控制台建的 `type=agent` key）和任务管家建/删 Agent 用的
+   `HEYBE_FASTCLAW_ADMIN_TOKEN`（owner key），两把必须不同，分别存钥匙串（如 `heybe-fastclaw-chat` /
+   `heybe-fastclaw-admin`）。旧名 `HEYBE_FASTCLAW_TOKEN` 只当对话 key 的别名。token 不写进日志。
+   见 `.env.example` 与 `docs/t044-agent-boundary.md` §2。
 8. **Ollama（本地模型，只验证基础对话）**：`brew install ollama && ollama serve`，
    拉一个小模型如 `ollama pull qwen2.5:7b`；工具调用不在阶段 0 验证范围。
 

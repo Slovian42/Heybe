@@ -16,12 +16,14 @@
 | 7 | 定时触发与重复发生标识 | 一次发生只有一份任务 | 补去重包装，固定唯一计时者 | | |
 | 8 | 重启语义和未完成作业 | 已完成记录保留，中断操作可核查 | 不宣传自动无损恢复 | **不具备（已走降级）**（`/v1` 无作业恢复 API；运行时未实测） | [源码核对](#adapter-v140)、[降级说明](#t04-degrade) |
 | 9 | 密钥存储与导出 | 数据库、日志和模板无明文密钥 | 调整凭据注入后再扩大测试 | | |
-| 10 | （Pro）经 API 创建/删除 Agent 及限定工具范围 | `POST/DELETE /v1/agents` 可用且工具范围可限定 | Pro 工厂延后或列为上游提案 | 待核验 | [源码核对](#adapter-v140) |
+| 10 | （Pro）经 API 创建/删除 Agent 及限定工具范围 | `POST/DELETE /v1/agents` 可用且工具范围可限定 | Pro 工厂延后或列为上游提案 | 创建/删除：**通过**（2026-10-27 Linux 实测，owner key 200）；限定工具范围：**不具备**（创建体无白名单字段）；对话内 `create_agent`：经 `/v1` **被拒**（chatter 恒非 operator） | [t044 §2](t044-agent-boundary.md#2-对话内建-agent实测结论2026-10-27linuxv140-b5ad3dff)、备注 3 |
 
 ## 备注
 
 1. **`/v1/*` vs `/api/*`**：FastClaw 官方集成指南（`skills/agent-integration/SKILL.md`）指定 `/v1/*` 为应用集成接口，`/api/*` 是可能变化的内部控制台接口。Agent 管理、配置、渠道、导入导出逐项核对是否有 `/v1` 等价物；本仓库适配层禁止 `/api/*`（lint 强制）。若将来不得不用，须单独评审，集中在适配层、固定版本并加兼容检查。
 2. **model 字段不覆盖 Agent 配置**：`POST /v1/chat/completions` 请求里的 `model` 字段不会覆盖 Agent 自身的模型配置。切换或降级模型须通过已验证的 Agent 配置或候补 Agent，不能只改请求字段。v1.4.0 源码里该字段只被抄进响应回显（见下方端点核对），运行时：**model 回显**已在 Linux box 对 v1.4.0 实测一次（请求探针与响应 `model` 一致，见 `docs/poc-deepseek-min.md` §6）；**是否覆盖 Agent 配置**仍是 **待核验**（旁证：跑完后 Agent 配置模型仍为 DeepSeek，未变成探针字符串）。切换模型仍须改 Agent 配置或换 Agent。
+
+3. **对话 key 与管理 key 分开（#66 后续）**：Heybe 用 `HEYBE_FASTCLAW_CHAT_TOKEN`（对话，带 `HEYBE_FASTCLAW_END_USER`，默认 `heybe-local`）和 `HEYBE_FASTCLAW_ADMIN_TOKEN`（owner，仅任务管家建/删 Agent）两把 key。实测：`/v1` 对话里模型调用 `create_agent` 一律被拒（与 key 无关）；但**任何 `type=user` key 都能 `POST/DELETE /v1/agents`**，服务端不区分。只有控制台建的 `type=agent` key 会被 403（v1.4.0 CLI 建不出）。因此 key 分离是 Heybe 侧约束，服务端强制要靠 `type=agent` 对话 key。详见 `docs/t044-agent-boundary.md` §2。
 
 ## T0.4.x 降级结论（源码，非运行时伪造） {#t04-degrade}
 
@@ -48,9 +50,9 @@
 | `GET /v1/agents` | server.go:91，[`agents.go` `HandleListAgents`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/api/agents.go) | `listAgents`；`health()` 使用 `?limit=1` | 待核验 |
 | `GET /v1/agents/{id}` | server.go:93 | `getAgent`（响应包在 `{ "agent": ... }` 里） | 待核验 |
 | `GET /v1/agents/{id}/sessions/{session}/files/{path...}` | server.go:97，[`files.go`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/api/files.go) | `getSessionFile`。可选 `project_id`，会话若带了 end-user 须带同一个 `X-Fastclaw-End-User` | 待核验 |
-| `POST /v1/agents` | server.go:92 | 未封装 | 待核验 |
-| `PATCH /v1/agents/{id}` | server.go:94 | 未封装。改模型走这里的 `model` 字段，不走聊天请求 | 待核验 |
-| `DELETE /v1/agents/{id}` | server.go:95 | 未封装 | 待核验 |
+| `POST /v1/agents` | server.go:92 | `createAgent`（仅 `admin` 角色；任务管家 `FastClawAgentAdmin`） | 实测 200（2026-10-27） |
+| `PATCH /v1/agents/{id}` | server.go:94 | 未封装（`chat` 角色本地拒绝）。改模型走这里的 `model` 字段，不走聊天请求 | 实测 200（`type=agent` key 也可改已绑定 Agent） |
+| `DELETE /v1/agents/{id}` | server.go:95 | `deleteAgent`（仅 `admin` 角色） | 实测 200，返回 `{id, deleted:true}` |
 | `PUT /v1/agents/{id}/system-files/{name}` | server.go:96 | 未封装 | 待核验 |
 | `POST /v1/users` | server.go:107 | 未封装 | 待核验 |
 | `GET /v1/usage` | server.go:113 | 未封装 | 待核验 |

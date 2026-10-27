@@ -42,7 +42,7 @@ export class FastClawConfigError extends Error {
   constructor(missing: readonly string[]) {
     super(
       `Missing or invalid FastClaw client configuration: ${missing.join(", ")}. ` +
-        "Set HEYBE_FASTCLAW_BASE_URL and HEYBE_FASTCLAW_TOKEN. Values are never logged.",
+        "Set HEYBE_FASTCLAW_BASE_URL plus HEYBE_FASTCLAW_CHAT_TOKEN (chat) or HEYBE_FASTCLAW_ADMIN_TOKEN (agent admin). Values are never logged.",
     );
     this.name = "FastClawConfigError";
     this.missing = missing;

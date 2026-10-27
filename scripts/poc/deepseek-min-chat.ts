@@ -3,7 +3,7 @@
  *
  * 环境变量（必填）：
  *   HEYBE_FASTCLAW_BASE_URL  例 http://127.0.0.1:18953
- *   HEYBE_FASTCLAW_TOKEN     FastClaw API key（绝不打印）
+ *   HEYBE_FASTCLAW_CHAT_TOKEN  FastClaw 对话 API key（绝不打印；旧名 HEYBE_FASTCLAW_TOKEN 兼容）
  *
  * 可选：
  *   HEYBE_FASTCLAW_AGENT_ID  指定 Agent；省略则取 listAgents 的第一个
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
     if (err instanceof FastClawConfigError) {
       failClear(
         `缺少或无效的环境变量：${err.missing.join(", ")}。` +
-          "请设置 HEYBE_FASTCLAW_BASE_URL 与 HEYBE_FASTCLAW_TOKEN（见 docs/poc-deepseek-min.md）。DeepSeek 密钥不经本脚本。",
+          "请设置 HEYBE_FASTCLAW_BASE_URL 与 HEYBE_FASTCLAW_CHAT_TOKEN（见 docs/poc-deepseek-min.md）。DeepSeek 密钥不经本脚本。",
       );
     }
     throw err;
