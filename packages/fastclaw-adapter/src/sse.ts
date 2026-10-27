@@ -8,6 +8,18 @@ export class SseParseError extends Error {
   }
 }
 
+/**
+ * The body ended (or the connection dropped) before `data: [DONE]`.
+ * FastClaw v1.4.0 sends `[DONE]` after every finished turn, so a missing one means
+ * the gateway stopped / restarted or the connection broke mid-turn (#9).
+ */
+export class SseTruncatedError extends Error {
+  constructor() {
+    super("FastClaw SSE stream ended before [DONE]");
+    this.name = "SseTruncatedError";
+  }
+}
+
 export async function* iterateSseData(stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -70,7 +82,10 @@ function eventsFromChunk(raw: V1ChatChunk): Array<V1StreamEvent | { type: "error
   return out;
 }
 
-/** Parse a FastClaw chat SSE body. Yields `error` for an in-band turn failure; the client throws. */
+/**
+ * Parse a FastClaw chat SSE body. Yields `error` for an in-band turn failure; the client throws.
+ * Throws SseTruncatedError when the body ends without `[DONE]`.
+ */
 export async function* parseChatSse(
   stream: ReadableStream<Uint8Array>,
 ): AsyncGenerator<V1StreamEvent | { type: "error"; error: V1ApiError }> {
@@ -85,6 +100,7 @@ export async function* parseChatSse(
     if (!raw || typeof raw !== "object") throw new SseParseError();
     for (const event of eventsFromChunk(raw)) yield event;
   }
+  throw new SseTruncatedError();
 }
 
 export function sseFailure(error: V1ApiError): FastClawError {

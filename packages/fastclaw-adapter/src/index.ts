@@ -14,18 +14,27 @@ export {
   RETRY_HARD_MAX_DELAY_MS,
   type RetryOptions,
 } from "./retry.js";
-export { parseChatSse } from "./sse.js";
+export { parseChatSse, SseTruncatedError } from "./sse.js";
 export {
+  DEFAULT_FASTCLAW_END_USER,
+  HEYBE_FASTCLAW_ADMIN_TOKEN,
   HEYBE_FASTCLAW_BASE_URL,
+  HEYBE_FASTCLAW_CHAT_TOKEN,
+  HEYBE_FASTCLAW_END_USER,
   HEYBE_FASTCLAW_TOKEN,
   loadFastClawClientConfig,
+  type FastClawClientConfig,
+  type FastClawClientRole,
 } from "./config.js";
 export {
   DEFAULT_TIMEOUT_MS,
+  FASTCLAW_V1_ADMIN_ROUTES,
   FASTCLAW_V1_CLIENT_ROUTES,
   FastClawClient,
+  fastClawAdminClientFromEnv,
   fastClawClientFromEnv,
   type CallOptions,
+  type CreateAgentInput,
   type CreateSessionInput,
   type FastClawClientOptions,
   type GetSessionFileInput,
@@ -37,8 +46,10 @@ export type {
   FastClawFileDownload,
   FastClawSession,
   V1Agent,
+  V1AgentDeleted,
   V1AgentList,
   V1ApiError,
+  V1CreateAgentRequest,
   V1ChatChunk,
   V1ChatCompletion,
   V1ChatMessage,

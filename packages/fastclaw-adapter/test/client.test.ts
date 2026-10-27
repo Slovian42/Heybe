@@ -5,6 +5,7 @@ import { inspect } from "node:util";
 import { describe, expect, it, vi } from "vitest";
 import {
   FastClawClient,
+  FastClawError,
   assertV1Path,
   fastClawClientFromEnv,
   loadFastClawClientConfig,
@@ -359,7 +360,7 @@ describe("configuration and token handling", () => {
   });
 
   it("names missing variables and never echoes the token", () => {
-    expect(() => loadFastClawClientConfig({ HEYBE_FASTCLAW_BASE_URL: "http://127.0.0.1:18953" })).toThrow(/HEYBE_FASTCLAW_TOKEN/);
+    expect(() => loadFastClawClientConfig({ HEYBE_FASTCLAW_BASE_URL: "http://127.0.0.1:18953" })).toThrow(/HEYBE_FASTCLAW_CHAT_TOKEN/);
     const embedded = `http://127.0.0.1/${TOKEN}`;
     try {
       loadFastClawClientConfig({ HEYBE_FASTCLAW_BASE_URL: embedded, HEYBE_FASTCLAW_TOKEN: TOKEN });
@@ -443,5 +444,52 @@ describe("streamMessage abort during body", () => {
     ).rejects.toBeTruthy();
     expect(seen).toEqual(["delta"]);
     expect(bodySignal?.aborted).toBe(true);
+  });
+});
+
+describe("streamMessage truncated stream (#9)", () => {
+  const enc = new TextEncoder();
+  const chunk = `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "半截" } }] })}\n\n`;
+
+  async function run(body: ReadableStream<Uint8Array>) {
+    const fetchImpl = (async () => new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } })) as typeof fetch;
+    const c = client({ fetchImpl, retry: { maxAttempts: 1 } });
+    const session = c.createSession({ agentId: "agt_1", sessionKey: "s" });
+    const seen: string[] = [];
+    try {
+      for await (const event of c.streamMessage(session, { messages: [{ role: "user", content: "go" }] })) seen.push(event.type);
+    } catch (err) {
+      return { seen, err };
+    }
+    return { seen, err: undefined };
+  }
+
+  it("reports a body that closes without [DONE] as network/stream_truncated", async () => {
+    const { seen, err } = await run(
+      new ReadableStream({
+        start(c) {
+          c.enqueue(enc.encode(chunk));
+          c.close();
+        },
+      }),
+    );
+    expect(seen).toEqual(["delta"]);
+    expect(err).toBeInstanceOf(FastClawError);
+    expect(err).toMatchObject({ kind: "network", code: "stream_truncated", method: "POST", path: "/v1/chat/completions" });
+    expect((err as Error).message).toMatch(/before \[DONE\]/);
+  });
+
+  it("reports a socket that dies mid-body (undici 'terminated') as stream_truncated without leaking the token", async () => {
+    const { seen, err } = await run(
+      new ReadableStream({
+        start(c) {
+          c.enqueue(enc.encode(chunk));
+          setTimeout(() => c.error(new TypeError(`terminated ${TOKEN}`)), 0);
+        },
+      }),
+    );
+    expect(seen).toEqual(["delta"]);
+    expect(err).toMatchObject({ kind: "network", code: "stream_truncated" });
+    expect(String((err as Error).message)).not.toContain(TOKEN);
   });
 });
