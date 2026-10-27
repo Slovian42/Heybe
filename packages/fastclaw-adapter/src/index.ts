@@ -14,7 +14,7 @@ export {
   RETRY_HARD_MAX_DELAY_MS,
   type RetryOptions,
 } from "./retry.js";
-export { parseChatSse } from "./sse.js";
+export { parseChatSse, SseTruncatedError } from "./sse.js";
 export {
   HEYBE_FASTCLAW_BASE_URL,
   HEYBE_FASTCLAW_TOKEN,

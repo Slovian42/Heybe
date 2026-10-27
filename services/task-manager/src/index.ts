@@ -30,6 +30,7 @@ export { startDispatchLoop, type DispatchLoop, type DispatchLoopOptions } from "
 export { DEFAULT_LEASE_MS, DEFAULT_WORKER_SLOTS, LOOPBACK_HOST } from "./constants.js";
 export {
   ABORT_NOTE,
+  TRUNCATED_NOTE,
   FastClawEventType,
   FastClawNodeExecutor,
   HEYBE_FASTCLAW_AGENT_ID,

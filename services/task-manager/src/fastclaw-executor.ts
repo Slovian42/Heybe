@@ -27,6 +27,13 @@ export const FastClawEventType = {
 /** Wording required by #58: we only know the client connection was dropped. */
 export const ABORT_NOTE = "连接已断开，服务端是否停止未知";
 
+/**
+ * #9: the stream ended without [DONE] (gateway stopped / restarted, or the connection broke).
+ * v1.4.0 keeps the user message but drops the partial reply, and the next turn on the same
+ * session answers that orphan message — so do not auto-retry on the same session key.
+ */
+export const TRUNCATED_NOTE = "流被中断（未收到 [DONE]），服务端执行结果未知，需人工核查；不要在同一会话自动重试";
+
 export interface FastClawNodeExecutorOptions {
   client: FastClawClient;
   defaultAgentId?: string;
@@ -118,6 +125,15 @@ export class FastClawNodeExecutor implements NodeExecutor {
         err instanceof FastClawError
           ? { kind: err.kind, status: err.status ?? null, code: err.code ?? null, message: err.message }
           : { kind: "unknown", status: null, code: null, message: err instanceof Error ? err.message : String(err) };
+      if (err instanceof FastClawError && err.code === "stream_truncated") {
+        insertEvent(this.db, {
+          ...base,
+          type: FastClawEventType.StreamError,
+          data: { ...data, chars, note: TRUNCATED_NOTE, serverStopped: "unknown" },
+          at: this.#now(),
+        });
+        return { outcome: "needs_check", error: TRUNCATED_NOTE };
+      }
       insertEvent(this.db, { ...base, type: FastClawEventType.StreamError, data, at: this.#now() });
       return { outcome: "failed", error: `FastClaw ${data.kind}${data.code ? ` ${data.code}` : ""}: ${data.message}` };
     } finally {
