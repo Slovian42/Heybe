@@ -120,7 +120,7 @@ step_all() {
   agent_id=$(fastclaw agents list 2>/dev/null | grep -o 'agt_[A-Za-z0-9_-]*' | head -1 || true)
   json=$( cd "${REPO_ROOT}" && env -u DEEPSEEK_API_KEY \
       HEYBE_FASTCLAW_BASE_URL="http://127.0.0.1:${PORT}" \
-      HEYBE_FASTCLAW_TOKEN="$(cat "${KEY_FILE}")" \
+      HEYBE_FASTCLAW_CHAT_TOKEN="$(cat "${KEY_FILE}")" \
       ${agent_id:+HEYBE_FASTCLAW_AGENT_ID=$agent_id} \
       pnpm dlx tsx scripts/poc/deepseek-min-chat.ts 2>>"${LOG}" ) || rc=$?
   printf '%s\n' "$json" >"${T021_HOME}/chat.json"
