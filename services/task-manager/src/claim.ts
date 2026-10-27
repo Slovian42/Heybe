@@ -25,8 +25,16 @@ export interface ClaimOptions {
   now?: string;
   leaseMs?: number;
   workerSlots?: number;
+  /**
+   * FastClaw agent id to backfill on nodes that have none. Never derived from
+   * `owner` (a scheduler identity, not an agent). When omitted, the node stays
+   * unassigned and the executor picks its own default agent.
+   */
   agentId?: string;
 }
+
+/** Recorded on attempts whose node had no agent at claim time. */
+export const UNASSIGNED_AGENT_ID = "unassigned";
 
 export interface ApplyExecutionInput {
   nodeId: string;
@@ -131,7 +139,8 @@ export function claimNextNode(db: Database.Database, opts: ClaimOptions): Claime
       if (!dependenciesMet(db, candidate.depends_on_json)) continue;
       const status = candidate.status as TaskStatus;
       if (status !== "running") assertTransition(status, "running");
-      const agentId = candidate.assigned_agent_id ?? opts.agentId ?? opts.owner;
+      const optAgent = opts.agentId?.trim() || null;
+      const agentId = candidate.assigned_agent_id ?? optAgent;
       const info = db.prepare(CLAIM_NODE_SQL).run({
         owner: opts.owner,
         expires,
@@ -147,7 +156,7 @@ export function claimNextNode(db: Database.Database, opts: ClaimOptions): Claime
       const attempt = insertRunningAttempt(db, {
         id: randomUUID(),
         nodeId: candidate.id,
-        agentId,
+        agentId: agentId ?? UNASSIGNED_AGENT_ID,
         executionVersion,
         startedAt: now,
       });

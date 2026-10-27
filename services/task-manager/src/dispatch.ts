@@ -14,8 +14,8 @@ export type DispatchOnceResult =
   | { claimed: true; request: ExecutionRequest; result: ExecutionResult; node: NodeRecord };
 
 /**
- * In-process dispatcher. FastClaw is intentionally not called.
- * Pass a NodeExecutor; MockExecutor is the stand-in until the adapter is wired.
+ * In-process dispatcher: claims one node and runs it with the given NodeExecutor.
+ * Use FastClawNodeExecutor for real /v1 dispatch, MockExecutor in tests and CI.
  */
 export async function dispatchOnce(
   db: Database.Database,
