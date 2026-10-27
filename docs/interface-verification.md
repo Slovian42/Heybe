@@ -10,12 +10,12 @@
 | 1 | 指定 Agent、独立会话与流式结果 | 两个任务上下文互不串扰，文件可取回 | 先补适配或缩小 MVP | **通过**（2026-10-27 Linux 实测；边界：会话文件只按 session key 落盘、`MEMORY.md` 走 Agent 共享目录） | [T0.4.1 实测](t041-runtime-verification.md)、`scripts/poc/fastclaw-lab.sh runtime` |
 | 2 | 执行状态、停止和取消 | 能区分执行停止与前端连接中断 | 只读任务先行，不做危险自动接管 | **不具备（已走降级）**（2026-10-27 实测：协议层区分不了，重启和断网都是流没 `[DONE]` 就断；但客户端断开时 gateway 立即取消这一轮，所以“断开”≈“已停止”，工具副作用需人工核查。适配层报 `stream_truncated`，任务管家记 `needs_check`） | [源码核对](#adapter-v140)、[降级说明](#t04-degrade)、[T0.4.2 实测](t042-restart-verification.md) |
 | 3 | 工具事件与错误 | 能观察失败和真实节点状态 | 加受控执行包装，不用文本猜完成 | **不具备（已走降级）**（工具事件只有 `id/name/status`，被拒的调用也是 `done`，**看不出工具失败**；流被切断时没有 `error` 块，适配层改报 `stream_truncated`） | [T0.4.1 实测](t041-runtime-verification.md#3-观察到的工具事件名)、[T0.4.2 实测](t042-restart-verification.md) |
-| 4 | 工具前审批与恢复 | 拒绝、过期、重启后都不会误执行 | 用受控工具；未覆盖动作暂缓开放 | **不具备（已走降级）** | [源码核对](#adapter-v140)、[降级说明](#t04-degrade) |
+| 4 | 工具前审批与恢复 | 拒绝、过期、重启后都不会误执行 | 用受控工具；未覆盖动作暂缓开放 | **不具备（已走降级）**（无审批钩子，`BeforeToolCall` 不能否决；`/v1` 只有 `params.planMode` 先出计划，不是逐工具审批） | [源码核对](#adapter-v140)、[降级说明](#t04-degrade)、[T0.4.3 §2](t043-approval-cron-channels-keys.md#2-工具前审批) |
 | 5 | MCP、浏览器与沙箱边界 | 未授权文件、网络与动作被实际阻止 | 修正隔离，不能只改提示词 | | |
-| 6 | 渠道任务入口和确定性通知 | 建任务、查状态、回传交付物能闭环 | 先本地闭环；通知插件列为开发项 | | |
-| 7 | 定时触发与重复发生标识 | 一次发生只有一份任务 | 补去重包装，固定唯一计时者 | | |
+| 6 | 渠道任务入口和确定性通知 | 建任务、查状态、回传交付物能闭环 | 先本地闭环；通知插件列为开发项 | **不具备（已走降级）**（渠道只在 `/api`，IM 直连 Agent、绕过 Heybe；无推送/通知接口。源码核对，未实测） | [T0.4.3 §4](t043-approval-cron-channels-keys.md#4-渠道入口与通知) |
+| 7 | 定时触发与重复发生标识 | 一次发生只有一份任务 | 补去重包装，固定唯一计时者 | **不具备（已走降级）**（FastClaw cron 至少一次、无发生标识，管理只在 `/api`；但 `/v1` 对话可经 `create_cron_job` 自建定时。Heybe 做唯一计时者。源码核对，未实测） | [T0.4.3 §3](t043-approval-cron-channels-keys.md#3-定时触发) |
 | 8 | 重启语义和未完成作业 | 已完成记录保留，中断操作可核查 | 不宣传自动无损恢复 | **不具备（已走降级）**（2026-10-27 Linux 实测：重启后历史保留；进行中的流 TERM/KILL 都被直接切断、无优雅收尾；中断那一轮用户消息留下、回复丢失、不续跑；daemon 模式崩溃自动拉起但同样不续跑。不在同一会话自动重试） | [源码核对](#adapter-v140)、[降级说明](#t04-degrade)、[T0.4.2 实测](t042-restart-verification.md) |
-| 9 | 密钥存储与导出 | 数据库、日志和模板无明文密钥 | 调整凭据注入后再扩大测试 | | |
+| 9 | 密钥存储与导出 | 数据库、日志和模板无明文密钥 | 调整凭据注入后再扩大测试 | **不具备（已走降级）**（模型 key 明文存于 `fastclaw.db` 的 `configs.data`；API key 只存哈希；日志、Agent 归档无明文；`agents init` 输出含 admin 密码；stdio MCP 继承网关全部环境变量） | [T0.4.3 §5–6](t043-approval-cron-channels-keys.md#5-密钥存储与导出) |
 | 10 | （Pro）经 API 创建/删除 Agent 及限定工具范围 | `POST/DELETE /v1/agents` 可用且工具范围可限定 | Pro 工厂延后或列为上游提案 | 创建/删除：**通过**（2026-10-27 Linux 实测，owner key 200）；限定工具范围：**不具备**（创建体无白名单字段）；对话内 `create_agent`：经 `/v1` **被拒**（chatter 恒非 operator） | [t044 §2](t044-agent-boundary.md#2-对话内建-agent实测结论2026-10-27linuxv140-b5ad3dff)、备注 3 |
 
 ## 备注
@@ -81,4 +81,4 @@
 - **流式**：`stream: true` 时 `Content-Type: text/event-stream`，块为 OpenAI chunk，结束是 `data: [DONE]`。工具调用是空 delta 上的 `tool`（`status` 为 `running` 然后 `done`）。回合失败时 HTTP 仍是 200，最后一块带 `error`（`code: agent_error`）；非流式同一失败是 `502`。
 - **产物**：非流式在响应顶层 `files`，流式在带 `finish_reason` 的最后一块。下载 URL 就是上面的 session file GET。`return_files: "inline"` 时小文件另有 `data_url`。
 
-表第 5–7、9 行这次没有做运行时核验，状态保持未填（视为未开始）。渠道、定时、沙箱和密钥不在 `/v1` 客户端这一版的调用范围内。
+表第 5 行这次没有做运行时核验，状态保持未填（视为未开始）。第 4、6、7、9 行的源码核对与旁证见 [T0.4.3](t043-approval-cron-channels-keys.md)（issue #10）；其中 MCP 环境变量继承（T0.4.3 §6）是第 5 行的输入。渠道、定时、沙箱和密钥不在 `/v1` 客户端这一版的调用范围内。
