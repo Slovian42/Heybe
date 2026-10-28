@@ -92,8 +92,7 @@ step_all() {
   stop_gateway
   if curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz"; then die E_PORT_BUSY "端口 ${PORT} 已被占用（可设 HEYBE_T021_PORT 换端口）"; fi
   # gateway 只拿白名单环境变量（不含 DEEPSEEK_API_KEY；MCP/插件会继承 gateway 的环境）
-  fc_env_exec "" nohup fastclaw >"${T021_HOME}/gateway.log" 2>&1 &
-  echo $! >"${PID_FILE}"
+  fc_env_bg "${PID_FILE}" "" nohup fastclaw >"${T021_HOME}/gateway.log" 2>&1
   local i; for i in $(seq 1 30); do curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz" && break; sleep 1; done
   curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz" || die E_GATEWAY "FastClaw 30 秒内没起来"
   ok "FastClaw gateway 已在 127.0.0.1:${PORT} 启动（独立数据目录）"

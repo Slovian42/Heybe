@@ -32,7 +32,16 @@ fc_env_exec() {
     fi
     kv+=("${n}=${!n}")
   done
+  if [ "${FC_ENV_EXEC:-}" = 1 ]; then exec env -i "${kv[@]}" "$@"; fi
   env -i "${kv[@]}" "$@"
+}
+
+# fc_env_bg <pidfile> "<额外变量名>" cmd args...：后台启动，pidfile 里是真正的进程 pid（exec 链：env → nohup → cmd），
+# 且进程不是调用脚本的子进程，脚本里不带参数的 wait 不会被它挂住。
+fc_env_bg() {
+  local pidfile="$1"
+  shift
+  ( FC_ENV_EXEC=1 fc_env_exec "$@" & echo $! >"${pidfile}" )
 }
 
 # fc_lock_home <dir>：目录 700、文件 600（数据库里有明文模型 key）

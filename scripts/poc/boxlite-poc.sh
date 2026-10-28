@@ -194,8 +194,8 @@ start_fastclaw() { # backend
   fi
   # `fastclaw` 无子命令即启动 gateway（FC:cmd/fastclaw/main.go:127）
   # 只传白名单环境变量；BOXLITE_API_KEY 是本地 serve 的占位值，显式放行；DEEPSEEK_API_KEY 不传（已在 init 时写库）
-  fc_env_exec "BOXLITE_API_KEY" nohup fastclaw >"$LOG_DIR/fastclaw-$backend.log" 2>&1 &
-  echo $! >"$POC_HOME/fastclaw.pid"; echo "$backend" >"$POC_HOME/fastclaw.backend"
+  fc_env_bg "$POC_HOME/fastclaw.pid" "BOXLITE_API_KEY" nohup fastclaw >"$LOG_DIR/fastclaw-$backend.log" 2>&1
+  echo "$backend" >"$POC_HOME/fastclaw.backend"
   wait_http "http://127.0.0.1:$FASTCLAW_PORT/" 30 || fail "FastClaw 未起来，见 ${LOG_DIR}/fastclaw-${backend}.log"
   pass "FastClaw 以 backend=${backend}、ENFORCE=1 启动（未设置 FASTCLAW_ALLOW_HOST_EXEC）"
 }

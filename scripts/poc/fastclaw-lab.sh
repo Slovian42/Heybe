@@ -46,8 +46,7 @@ jget() { node -e 'const o=JSON.parse(process.argv[1]);const v=process.argv[2].sp
 gw_pid() { cat "${LAB}/gw.pid" 2>/dev/null || true; }
 start_gateway() {
   # 不 source 密钥文件：模型 key 已在 agents init 时写库，gateway 只拿白名单环境变量（MCP/插件会继承它）
-  fc_env_exec "" nohup fastclaw gateway --port "${PORT}" >>"${GW_LOG}" 2>&1 &
-  echo $! >"${LAB}/gw.pid"
+  fc_env_bg "${LAB}/gw.pid" "" nohup fastclaw gateway --port "${PORT}" >>"${GW_LOG}" 2>&1
   local i
   for i in $(seq 1 60); do
     kill -0 "$(gw_pid)" 2>/dev/null || { echo "gateway 进程启动后退出（端口被占？）" >&2; return 1; }
