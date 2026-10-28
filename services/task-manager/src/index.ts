@@ -28,6 +28,15 @@ export { MockExecutor, dispatchOnce, type DispatchOnceResult } from "./dispatch.
 export { startTaskHttpServer, stopTaskHttpServer, type TaskHttpOptions } from "./http.js";
 export { startDispatchLoop, type DispatchLoop, type DispatchLoopOptions } from "./scheduler.js";
 export { DEFAULT_LEASE_MS, DEFAULT_WORKER_SLOTS, LOOPBACK_HOST } from "./constants.js";
+export {
+  CHILD_ENV_ALLOWLIST,
+  CHILD_ENV_DENY,
+  buildChildEnv,
+  isSecretEnvName,
+  lockPrivateTree,
+  type ChildEnvOptions,
+  type ChildEnvResult,
+} from "./child-env.js";
 export { FastClawAgentAdmin, fastClawAgentAdminFromEnv } from "./fastclaw-agent-admin.js";
 export {
   ABORT_NOTE,

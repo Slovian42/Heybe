@@ -13,6 +13,8 @@ umask 077
 
 FASTCLAW_VERSION="v1.4.0"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=lib-fc-env.sh
+. "${REPO_ROOT}/scripts/poc/lib-fc-env.sh"
 POC_ENV="${HEYBE_POC_ENV:-$HOME/.heybe-poc.env}"
 T021_HOME="${HEYBE_T021_HOME:-$HOME/.local/opt/heybe-t021}"
 FC_HOME="${T021_HOME}/fastclaw-home"
@@ -89,15 +91,21 @@ step_all() {
   export FASTCLAW_HOME="${FC_HOME}" FASTCLAW_PORT="${PORT}"
   stop_gateway
   if curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz"; then die E_PORT_BUSY "端口 ${PORT} 已被占用（可设 HEYBE_T021_PORT 换端口）"; fi
-  nohup fastclaw >"${T021_HOME}/gateway.log" 2>&1 &
+  # gateway 只拿白名单环境变量（不含 DEEPSEEK_API_KEY；MCP/插件会继承 gateway 的环境）
+  fc_env_exec "" nohup fastclaw >"${T021_HOME}/gateway.log" 2>&1 &
   echo $! >"${PID_FILE}"
   local i; for i in $(seq 1 30); do curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz" && break; sleep 1; done
   curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz" || die E_GATEWAY "FastClaw 30 秒内没起来"
   ok "FastClaw gateway 已在 127.0.0.1:${PORT} 启动（独立数据目录）"
 
   STEP="agent"
-  fastclaw agents init "${AGENT}" --provider deepseek --model "${MODEL}" --api-key-env DEEPSEEK_API_KEY \
-    >"${T021_HOME}/agents-init.log" 2>&1 || die E_AGENT_INIT "agents init 失败"
+  # init 输出可能含自动生成的控制台密码：只留在内存，不落盘；key 只传给这一次 init
+  local init_out init_rc=0
+  init_out=$(fc_env_exec DEEPSEEK_API_KEY fastclaw agents init "${AGENT}" --provider deepseek --model "${MODEL}" --api-key-env DEEPSEEK_API_KEY 2>&1) || init_rc=$?
+  init_out=""
+  unset DEEPSEEK_API_KEY
+  fc_lock_home "${FC_HOME}"
+  [ "${init_rc}" = 0 ] || die E_AGENT_INIT "agents init 失败（退出码 ${init_rc}）"
   ok "Agent ${AGENT} 已配置 DeepSeek（${MODEL}）"
 
   STEP="apikey"
