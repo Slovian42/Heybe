@@ -31,7 +31,10 @@ export const ABORT_NOTE = "连接已断开，服务端是否停止未知";
 
 /**
  * FastClaw v1.4.0 tools that create/configure Agents or hand work to other Agents
- * (internal/agent/tools/agent_admin.go, subagent.go, delegate.go, skill_install.go).
+ * (internal/agent/tools/agent_admin.go, subagent.go, delegate.go, skill_install.go),
+ * plus the scheduling tools (internal/agent/tools/cron.go): FastClaw registers
+ * create_cron_job / delete_cron_job on every Agent with a store and they cannot be
+ * turned off; Heybe's task manager must stay the only timer (docs/t043 §3).
  * `delete_agent` does not exist in v1.4.0; it is listed in case a later version adds it.
  * Over /v1 chat the runtime refuses the admin ones (chatter is never the operator),
  * but the stream only carries `status`, not the result, so every sighting is alerted.
@@ -44,9 +47,11 @@ export const FASTCLAW_ALERT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "spawn_subagent",
   "delegate_task",
   "install_skill",
+  "create_cron_job",
+  "delete_cron_job",
 ]);
 
-export const TOOL_ALERT_NOTE = "对话中出现了建/改/删 Agent 或委派类工具调用，需人工确认是否生效";
+export const TOOL_ALERT_NOTE = "对话中出现了建/改/删 Agent、委派或定时类工具调用，需人工确认是否生效";
 
 /**
  * #9: the stream ended without [DONE] (gateway stopped / restarted, or the connection broke).
