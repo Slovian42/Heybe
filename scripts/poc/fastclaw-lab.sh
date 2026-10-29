@@ -22,6 +22,8 @@ PORT="${HEYBE_LAB_PORT:-18983}"
 MODEL="${HEYBE_LAB_MODEL:-deepseek/deepseek-v4-flash}"
 SUITE="${1:-runtime}"
 BASE="http://127.0.0.1:${PORT}"
+# shellcheck source=lib-fc-env.sh
+. "${HERE}/lib-fc-env.sh"
 
 LAB="$(mktemp -d "${TMPDIR:-/tmp}/heybe-fastclaw-lab.XXXXXX")"
 chmod 700 "${LAB}"
@@ -43,14 +45,8 @@ jget() { node -e 'const o=JSON.parse(process.argv[1]);const v=process.argv[2].sp
 
 gw_pid() { cat "${LAB}/gw.pid" 2>/dev/null || true; }
 start_gateway() {
-  (
-    set -a
-    # shellcheck disable=SC1090
-    . "${ENV_FILE}"
-    set +a
-    nohup fastclaw gateway --port "${PORT}" >>"${GW_LOG}" 2>&1 &
-    echo $! >"${LAB}/gw.pid"
-  )
+  # 不 source 密钥文件：模型 key 已在 agents init 时写库，gateway 只拿白名单环境变量（MCP/插件会继承它）
+  fc_env_bg "${LAB}/gw.pid" "" nohup fastclaw gateway --port "${PORT}" >>"${GW_LOG}" 2>&1
   local i
   for i in $(seq 1 60); do
     kill -0 "$(gw_pid)" 2>/dev/null || { echo "gateway 进程启动后退出（端口被占？）" >&2; return 1; }
@@ -125,15 +121,16 @@ setup() {
   [ -f "${ENV_FILE}" ] && [ "$(file_mode "${ENV_FILE}")" = 600 ] || { echo "${ENV_FILE} 不存在或权限不是 600" >&2; exit 2; }
   grep -q '^[[:space:]]*\(export[[:space:]]\+\)\?DEEPSEEK_API_KEY=.' "${ENV_FILE}" || { echo "${ENV_FILE} 里没有 DEEPSEEK_API_KEY" >&2; exit 2; }
   if curl -s -o /dev/null -m 1 "${BASE}/healthz"; then echo "端口 ${PORT} 已被占用（设 HEYBE_LAB_PORT）" >&2; exit 2; fi
-  (
+  # init 输出含自动生成的控制台密码：只在管道里取 Agent ID，不落盘
+  AGENT_ID="$(
     set -a
     # shellcheck disable=SC1090
     . "${ENV_FILE}"
     set +a
-    fastclaw agents init heybe-lab --provider deepseek --model "${MODEL}" --api-key-env DEEPSEEK_API_KEY >"${LAB}/init.log" 2>&1
-  )
-  AGENT_ID="$(sed -n 's/^Agent ID:[[:space:]]*//p' "${LAB}/init.log" | head -1)"
-  rm -f "${LAB}/init.log" # 含自动生成的控制台密码
+    fc_env_exec DEEPSEEK_API_KEY fastclaw agents init heybe-lab --provider deepseek --model "${MODEL}" --api-key-env DEEPSEEK_API_KEY 2>&1 \
+      | sed -n 's/^Agent ID:[[:space:]]*//p' | head -1
+  )" || true
+  fc_lock_home "${FASTCLAW_HOME}"
   [ -n "${AGENT_ID}" ] || { echo "agents init 失败" >&2; exit 2; }
   stop_daemon
   local i; for i in $(seq 1 40); do curl -s -o /dev/null -m 1 "${BASE}/healthz" || break; sleep 0.25; done
@@ -307,7 +304,7 @@ suite_restart() {
 
   # S5 daemon 模式（`fastclaw daemon start`，也是 `agents init` 自动拉起的方式）：gateway 被杀后谁来拉起
   stop_gateway TERM
-  fastclaw daemon start --port "${PORT}" >/dev/null 2>&1 || true
+  fc_env_exec "" fastclaw daemon start --port "${PORT}" >/dev/null 2>&1 || true
   local dpid g1 g2 up=""
   for i in $(seq 1 60); do curl -s -o /dev/null -m 1 "${BASE}/healthz" && { up=1; break; }; sleep 0.5; done
   # 注意 fastclaw.pid 先写 daemon、随后被 gateway 自己覆盖成 gateway 的 pid，所以按进程名找
