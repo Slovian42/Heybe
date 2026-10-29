@@ -74,7 +74,7 @@ LIMA_START_TIMEOUT=45m scripts/poc/boxlite-poc.sh all
 |---|---|---|---|
 | DEEPSEEK_API_KEY | `${HEYBE_POC_ENV:-~/.heybe-poc.env}`（600 校验） | 只在脚本进程和 FastClaw gateway 环境中 | 终端、日志、报告 |
 | FastClaw apikey（每个后端一个） | 脚本运行 `fastclaw apikey create`，先用 `--help` 确认 `--name`（和 `--type`）参数存在，拿不到就 FAIL 并提示 | `~/.local/opt/heybe-poc/{boxlite,docker}/fastclaw-apikey`（600） | 终端、日志、报告 |
-| admin 初始密码 | `agents init` 首次创建 admin 时可能生成 | `~/.local/opt/heybe-poc/<backend>/agents-init.log`（600） | 报告 |
+| admin 初始密码 | `agents init` 首次创建 admin 时会打印生成的密码 | **不落盘**（脚本只在内存里读 init 输出后丢弃）；Heybe 不用控制台，需要时用 `fastclaw admin reset-password` 重置 | 报告 |
 | BOXLITE_API_KEY | 占位值 `local-poc`（本地 serve 未加 `--api-key` 为宽松模式） | 环境变量 | — |
 
 ## 3. 原手动步骤的自动化情况

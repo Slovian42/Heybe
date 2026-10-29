@@ -221,7 +221,22 @@ describe("FastClawNodeExecutor", () => {
     for (const name of ["create_agent", "configure_agent", "delete_agent", "spawn_subagent", "delegate_task"]) {
       expect(FASTCLAW_ALERT_TOOL_NAMES.has(name)).toBe(true);
     }
+    expect(FASTCLAW_ALERT_TOOL_NAMES.has("list_cron_jobs")).toBe(false);
     db.close();
+  });
+
+  it("alerts on scheduling tools (create_cron_job / delete_cron_job)", async () => {
+    for (const name of ["create_cron_job", "delete_cron_job"]) {
+      const { db, executor } = setup(() => sse([{ choices: [], tool: { id: "k1", name, status: "running" } }, stop]));
+      new TaskRepository(db).create({ goal: "g", nodes: [{ id: "n1" }] });
+      const r = await dispatchOnce(db, executor, { owner: "sched", agentId: "agent-1" });
+      if (!r.claimed) throw new Error("expected claim");
+      expect(r.result.outcome).toBe("needs_check");
+      const alerts = new EventRepository(db).listByTask(r.request.taskId).filter((e) => e.type === FastClawEventType.ToolAlert);
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]!.data).toMatchObject({ name });
+      db.close();
+    }
   });
 
   it("chat executor uses the chat key and end-user, never the admin key", async () => {

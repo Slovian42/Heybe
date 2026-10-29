@@ -18,6 +18,8 @@ FASTCLAW_VERSION="v1.4.0"
 BOXLITE_VERSION="${BOXLITE_VERSION:-}"          # 留空=latest；跑通后回填固定版本
 POC_HOME="${HEYBE_POC_HOME:-$HOME/.local/opt/heybe-poc}"
 POC_ENV="${HEYBE_POC_ENV:-$HOME/.heybe-poc.env}"
+# shellcheck source=lib-fc-env.sh
+. "$(cd "$(dirname "$0")" && pwd)/lib-fc-env.sh"
 BOXLITE_DIR="$HOME/.local/opt/boxlite/bin"
 FASTCLAW_DIR="$HOME/.local/opt/fastclaw/bin"
 LOG_DIR="$POC_HOME/logs"
@@ -191,8 +193,9 @@ start_fastclaw() { # backend
     pass "FastClaw(backend=${backend}) 已在运行"; return 0
   fi
   # `fastclaw` 无子命令即启动 gateway（FC:cmd/fastclaw/main.go:127）
-  nohup fastclaw >"$LOG_DIR/fastclaw-$backend.log" 2>&1 &
-  echo $! >"$POC_HOME/fastclaw.pid"; echo "$backend" >"$POC_HOME/fastclaw.backend"
+  # 只传白名单环境变量；BOXLITE_API_KEY 是本地 serve 的占位值，显式放行；DEEPSEEK_API_KEY 不传（已在 init 时写库）
+  fc_env_bg "$POC_HOME/fastclaw.pid" "BOXLITE_API_KEY" nohup fastclaw >"$LOG_DIR/fastclaw-$backend.log" 2>&1
+  echo "$backend" >"$POC_HOME/fastclaw.backend"
   wait_http "http://127.0.0.1:$FASTCLAW_PORT/" 30 || fail "FastClaw 未起来，见 ${LOG_DIR}/fastclaw-${backend}.log"
   pass "FastClaw 以 backend=${backend}、ENFORCE=1 启动（未设置 FASTCLAW_ALLOW_HOST_EXEC）"
 }
@@ -202,13 +205,17 @@ step_setup() { # backend
   local backend=$1 home kf out
   load_deepseek; fc_env "$backend"; home=$(home_for "$backend"); kf=$(apikey_file "$backend")
   info "[${backend}] agents init（DeepSeek，CLI：FC:cmd/fastclaw/cmd_agents.go）"
-  # --api-key-env 只写入变量名，密钥值由 gateway 进程环境提供；init 会在没有用户时创建 super_admin "admin"（生成的密码只进 600 日志，不进报告）
-  fastclaw agents init "$AGENT" --provider deepseek --model "$MODEL" --api-key-env DEEPSEEK_API_KEY \
-    >"$home/agents-init.log" 2>&1 || fail "[${backend}] agents init 失败（见 ${home}/agents-init.log）"
+  # --api-key-env：init 读出变量值写进数据库（FC:internal/agentcli/agentcli.go:550–558），gateway 运行时不需要它。
+  # init 会在没有用户时创建 super_admin "admin" 并打印生成的密码：输出只留内存，不落盘
+  local init_out init_rc=0
+  init_out=$(fc_env_exec DEEPSEEK_API_KEY fastclaw agents init "$AGENT" --provider deepseek --model "$MODEL" --api-key-env DEEPSEEK_API_KEY 2>&1) || init_rc=$?
+  init_out=""
+  fc_lock_home "$home"
+  [ "$init_rc" = 0 ] || fail "[${backend}] agents init 失败（退出码 ${init_rc}；手动重跑看原因）"
   pass "[${backend}] Agent ${AGENT} 已配置 provider=deepseek model=${MODEL}"
   if [ "$backend" = docker ]; then
     # 沙箱网络：agent 作用域 setting（FC:internal/agentcli/agentcli.go settingKey，sandbox.* 为 agent scope）
-    fastclaw agents config "$AGENT" set sandbox.network none >>"$home/agents-init.log" 2>&1 \
+    fastclaw agents config "$AGENT" set sandbox.network none >/dev/null 2>&1 \
       || fail "[${backend}] 设置 sandbox.network=none 失败"
     pass "[${backend}] sandbox.network=none 已写入 Agent 配置（是否作用于系统沙箱池待核实，见验证 3）"
   fi
