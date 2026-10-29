@@ -21,10 +21,18 @@ export const FastClawEventType = {
   Tool: "fastclaw_tool",
   /** A tool that can create/change/delete Agents or start other Agents appeared in the stream. */
   ToolAlert: "fastclaw_tool_alert",
+  /** Inferred from the stream: a tool reported a status other than running/done (e.g. error/failed). */
+  ToolFailed: "fastclaw_tool_failed",
+  /** Inferred at stream end: a tool started (running) but never reported done. */
+  ToolUnfinished: "fastclaw_tool_unfinished",
   StreamError: "fastclaw_stream_error",
   StreamDone: "fastclaw_stream_done",
   ConnectionAborted: "fastclaw_connection_aborted",
 } as const;
+
+export const TOOL_FAILED_NOTE = "流中有工具报告了非正常状态，需人工检查";
+/** FastClaw v1.4.0 only emits running → done; it has no result/error field, so errors returned to the model stay invisible. */
+const TOOL_OK_STATUSES: ReadonlySet<string> = new Set(["running", "done"]);
 
 /** Wording required by #58: we only know the client connection was dropped. */
 export const ABORT_NOTE = "连接已断开，服务端是否停止未知";
@@ -114,6 +122,14 @@ export class FastClawNodeExecutor implements NodeExecutor {
     });
     let chars = 0;
     const alerted = new Set<string>();
+    const toolRunning = new Map<string, string>();
+    const toolFailed = new Set<string>();
+    const flushUnfinished = (where: string) => {
+      for (const [id, name] of toolRunning) {
+        insertEvent(this.db, { ...base, type: FastClawEventType.ToolUnfinished, data: { id, name, at: where }, at: this.#now() });
+      }
+      toolRunning.clear();
+    };
     try {
       for await (const event of this.opts.client.streamMessage(session, {
         messages: [{ role: "user", content: (this.opts.buildPrompt ?? defaultPrompt)(request) }],
@@ -129,6 +145,18 @@ export class FastClawNodeExecutor implements NodeExecutor {
             at: this.#now(),
           });
           const alertKey = event.tool.id || event.tool.name;
+          const status = String(event.tool.status ?? "");
+          if (status === "running") toolRunning.set(alertKey, event.tool.name);
+          else toolRunning.delete(alertKey);
+          if (!TOOL_OK_STATUSES.has(status) && !toolFailed.has(alertKey)) {
+            toolFailed.add(alertKey);
+            insertEvent(this.db, {
+              ...base,
+              type: FastClawEventType.ToolFailed,
+              data: { id: event.tool.id, name: event.tool.name, status, note: TOOL_FAILED_NOTE },
+              at: this.#now(),
+            });
+          }
           if (FASTCLAW_ALERT_TOOL_NAMES.has(event.tool.name) && !alerted.has(alertKey)) {
             alerted.add(alertKey);
             insertEvent(this.db, {
@@ -147,11 +175,16 @@ export class FastClawNodeExecutor implements NodeExecutor {
           });
         }
       }
+      flushUnfinished("stream_end");
       if (alerted.size > 0) {
         return { outcome: "needs_check", error: TOOL_ALERT_NOTE, checkpoint: { sessionKey: session.sessionKey, chars } };
       }
+      if (toolFailed.size > 0) {
+        return { outcome: "needs_check", error: TOOL_FAILED_NOTE, checkpoint: { sessionKey: session.sessionKey, chars } };
+      }
       return { outcome: "awaiting_review", checkpoint: { sessionKey: session.sessionKey, chars } };
     } catch (err) {
+      flushUnfinished("stream_error");
       if (controller.signal.aborted) {
         // Event already written by abortTask; outcome needs a human check.
         return { outcome: "needs_check", error: ABORT_NOTE };

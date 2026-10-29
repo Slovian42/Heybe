@@ -16,6 +16,7 @@ import {
   openTaskDb,
   sessionKeyFor,
   TOOL_ALERT_NOTE,
+  TOOL_FAILED_NOTE,
   fastClawAgentAdminFromEnv,
   TRUNCATED_NOTE,
 } from "../src/index.js";
@@ -182,6 +183,31 @@ describe("FastClawNodeExecutor", () => {
     expect(alerts).toHaveLength(1);
     expect(alerts[0]!.data).toMatchObject({ id: "c1", name: "create_agent", status: "running", note: TOOL_ALERT_NOTE });
     expect(events.filter((e) => e.type === FastClawEventType.Tool)).toHaveLength(3);
+    db.close();
+  });
+
+  it("infers tool failure / unfinished tools from stream tool events (#58/#9)", async () => {
+    const { db, executor } = setup(() =>
+      sse([
+        { choices: [], tool: { id: "a", name: "read_file", status: "running" } },
+        { choices: [], tool: { id: "a", name: "read_file", status: "error" } },
+        { choices: [], tool: { id: "b", name: "web_fetch", status: "running" } },
+        { choices: [], tool: { id: "c", name: "write_file", status: "running" } },
+        { choices: [], tool: { id: "c", name: "write_file", status: "done" } },
+        stop,
+      ]),
+    );
+    new TaskRepository(db).create({ goal: "g", nodes: [{ id: "n1" }] });
+    const r = await dispatchOnce(db, executor, { owner: "sched", agentId: "agent-1" });
+    if (!r.claimed) throw new Error("expected claim");
+    expect(r.result.outcome).toBe("needs_check");
+    expect(r.result.error).toBe(TOOL_FAILED_NOTE);
+    const events = new EventRepository(db).listByTask(r.request.taskId);
+    const failed = events.filter((e) => e.type === FastClawEventType.ToolFailed);
+    expect(failed).toHaveLength(1);
+    expect(failed[0]!.data).toMatchObject({ id: "a", status: "error" });
+    const unfinished = events.filter((e) => e.type === FastClawEventType.ToolUnfinished);
+    expect(unfinished.map((e) => (e.data as { id: string }).id)).toEqual(["b"]);
     db.close();
   });
 
