@@ -72,6 +72,8 @@ stop_ollama() { # 只停本脚本起的 ollama serve；Ollama.app / brew service
   if [ -f "${OLLAMA_PID_FILE}" ]; then kill "$(cat "${OLLAMA_PID_FILE}")" 2>/dev/null || true; rm -f "${OLLAMA_PID_FILE}"; fi
 }
 stop_all() { stop_gateway; stop_ollama; }
+# Ctrl-C / 被杀时也停掉本脚本起的 gateway 和 ollama（正常结束和 die 已各自 stop_all）
+trap 'stop_all; exit 130' INT TERM
 
 # 有任一外网地址能连上就算“在线”。只发 HEAD/小请求，不带任何凭据。
 is_online() {
