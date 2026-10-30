@@ -7,9 +7,6 @@ import {
   fastClawClientFromEnv,
 } from "@heybe/fastclaw-adapter";
 
-import type { V1TurnFile } from "@heybe/shared-types";
-
-import { ArtifactError, saveArtifact } from "./artifacts.js";
 import { insertEvent } from "./events.js";
 import { cancelTask, type CancelTaskOptions } from "./tasks.js";
 import { isoNow } from "./time.js";
@@ -31,10 +28,6 @@ export const FastClawEventType = {
   StreamError: "fastclaw_stream_error",
   StreamDone: "fastclaw_stream_done",
   ConnectionAborted: "fastclaw_connection_aborted",
-  /** #12: a declared artifact was downloaded over /v1 and written locally. */
-  ArtifactSaved: "artifact_saved",
-  /** #12: a declared artifact was missing or rejected (name/size/type/download). */
-  ArtifactFailed: "artifact_failed",
 } as const;
 
 export const TOOL_FAILED_NOTE = "流中有工具报告了非正常状态，需人工检查";
@@ -81,16 +74,6 @@ export interface FastClawNodeExecutorOptions {
   timeoutMs?: number;
   buildPrompt?: (request: ExecutionRequest) => string;
   now?: () => string;
-  /** #12: fetch declared files from the stream's final `files[]` and save them locally. */
-  artifacts?: ArtifactCollectOptions;
-}
-
-export interface ArtifactCollectOptions {
-  /** Local output root; files go to `<root>/<taskId>/<name>`. */
-  root: string;
-  /** File names this node must produce (e.g. ["report.md"]). Empty → nothing collected. */
-  expected: (request: ExecutionRequest) => readonly string[];
-  maxBytes?: number;
 }
 
 export function sessionKeyFor(request: Pick<ExecutionRequest, "taskId" | "nodeId">): string {
@@ -143,7 +126,6 @@ export class FastClawNodeExecutor implements NodeExecutor {
       at: this.#now(),
     });
     let chars = 0;
-    let turnFiles: V1TurnFile[] = [];
     const alerted = new Set<string>();
     const toolRunning = new Map<string, string>();
     const toolFailed = new Set<string>();
@@ -190,7 +172,6 @@ export class FastClawNodeExecutor implements NodeExecutor {
             });
           }
         } else if (event.type === "done") {
-          if (event.files) turnFiles = event.files;
           insertEvent(this.db, {
             ...base,
             type: FastClawEventType.StreamDone,
@@ -200,8 +181,6 @@ export class FastClawNodeExecutor implements NodeExecutor {
         }
       }
       flushUnfinished("stream_end");
-      const artifactError = await this.#collectArtifacts(request, base, agentId, session.sessionKey, turnFiles);
-      if (artifactError) return { outcome: "failed", error: artifactError };
       if (alerted.size > 0) {
         return { outcome: "needs_check", error: TOOL_ALERT_NOTE, checkpoint: { sessionKey: session.sessionKey, chars } };
       }
@@ -233,58 +212,6 @@ export class FastClawNodeExecutor implements NodeExecutor {
     } finally {
       this.#inflight.delete(request.attemptId);
     }
-  }
-
-  /** Returns an error string when a declared artifact is missing or rejected; null when all saved. */
-  async #collectArtifacts(
-    request: ExecutionRequest,
-    base: { taskId: string; nodeId: string; attemptId: string },
-    agentId: string,
-    sessionKey: string,
-    files: readonly V1TurnFile[],
-  ): Promise<string | null> {
-    const opts = this.opts.artifacts;
-    if (!opts) return null;
-    for (const name of opts.expected(request)) {
-      const fail = (code: string, message: string) => {
-        insertEvent(this.db, { ...base, type: FastClawEventType.ArtifactFailed, data: { name, code, message }, at: this.#now() });
-        return `${code}: ${message}`;
-      };
-      // Only trust the stream's declared files[]; never guess from the reply text (design §3).
-      const file = files.find((f) => f.name === name || f.path === name);
-      if (!file) return fail("artifact_missing", `本轮没有产出 ${name}`);
-      const remotePath = file.path && !file.path.startsWith("/") ? file.path : file.name;
-      try {
-        if (typeof file.size === "number" && file.size > (opts.maxBytes ?? Infinity)) {
-          throw new ArtifactError("artifact_too_large", `产物超过上限 ${opts.maxBytes} 字节`);
-        }
-        let download;
-        try {
-          download = await this.opts.client.getSessionFile({ agentId, sessionKey, path: remotePath });
-        } catch (err) {
-          const kind = err instanceof FastClawError ? `${err.kind}${err.status ? ` ${err.status}` : ""}` : "unknown";
-          throw new ArtifactError("artifact_download_failed", `经 /v1 取回失败（${kind}）`);
-        }
-        const saved = saveArtifact({
-          root: opts.root,
-          taskId: request.taskId,
-          name,
-          bytes: download.bytes,
-          contentType: download.contentType ?? file.content_type ?? null,
-          maxBytes: opts.maxBytes,
-        });
-        insertEvent(this.db, {
-          ...base,
-          type: FastClawEventType.ArtifactSaved,
-          data: { name: saved.name, size: saved.size, path: saved.path, contentType: saved.contentType },
-          at: this.#now(),
-        });
-      } catch (err) {
-        if (err instanceof ArtifactError) return fail(err.code, err.message);
-        return fail("artifact_download_failed", err instanceof Error ? err.message.slice(0, 200) : "unknown");
-      }
-    }
-    return null;
   }
 
   /** Abort in-flight requests for a task. Returns how many were aborted. */
