@@ -19,7 +19,7 @@
 | 2 | 文件工具 `read_file`/`write_file`/`list_dir`/`apply_patch` | **部分**：默认路径进沙箱；**显式宿主机路径**（`~/Documents`、`~/Downloads`、`~/Desktop`、`~/projects`、`~/code`、`~/work`、`/Users/<u>/…`、`/home/<u>/…`）走 `RouteHostFS` 直接读写宿主机 | [`route.go:96–110`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/route.go#L96-L110) “local with sandbox → sandbox-first … Host disk is reachable only via explicit host-scope paths”；`isExplicitHostScope` 同文件 | **阻塞项 B1** |
 | 3 | 工作区产物（相对路径如 `report.md`）、身份文件（`MEMORY.md` 等） | **不在沙箱内，但在 FastClaw 自己的存储里**（`RouteWorkspaceStore`/`RouteSystemStore`，优先于沙箱判断） | [`route.go:72–83`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/route.go#L72-L83) | 可接受（这是产物取回的通道，见 #8）；`MEMORY.md` 跨会话共享见 T0.4.1 §2 |
 | 4 | 浏览器技能（`camoufox-cli`） | **跟随 exec**：没有独立浏览器工具，经 `exec` 调用 camoufox 守护进程（[`exec.go:84`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/exec.go#L84)、[`delegate.go:29–52`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/delegate.go#L29-L52)）。强制模式下在沙箱内；镜像里必须预装 | 第 1 行；待 #6 实测沙箱镜像是否带 camoufox |
-| 5 | `web_fetch` | **不在**：在 gateway 进程里发请求。有 SSRF 防护（拒私网、回环、链路本地、CGNAT，拨号时检查，限重定向，[`web_fetch.go:29–104`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/web_fetch.go#L29-L104)），但出网不受沙箱网络策略约束 | 同左 | 可接受为“只读出网”，**风险**：能把会话内容带到任意公网 URL（GET 参数外传）。D3 先用它做网页抓取，见 `docs/design/t051-web-report.md` |
+| 5 | `web_fetch` | **不在**：在 gateway 进程里发请求。有 SSRF 防护（拒私网、回环、链路本地、CGNAT，拨号时检查，限重定向，[`web_fetch.go:29–104`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/web_fetch.go#L29-L104)），但出网不受沙箱网络策略约束 | 同左 | 可接受为“只读出网”，**风险**：能把会话内容带到任意公网 URL（GET 参数外传）。**注意**：上述防护只在内置抓取器上；一旦 FastClaw 配置了 `tools.web_fetch` 提供方链，`direct` 提供方用 `http.DefaultClient`，**没有任何地址拦截**（2026-10-30 实测能读 127.0.0.1），所以 Heybe 不得配置该链。D3/D12（Yang 10-30 拍板，经 Grok Bot 转达）继续用它做网页抓取，风险评估与缓解见 `docs/design/t051-web-report.md` §7–8 |
 | 6 | `web_search` | **不在**：gateway 进程调外部搜索提供方（exa/brave/searxng，[`web_search.go:12–36`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/web_search.go#L12-L36)） | 同左 | v1 不配置搜索提供方（D3） |
 | 7 | MCP（stdio） | **不在**：`exec.Command` 在**宿主机**起子进程，`Env = os.Environ()` 全量继承，再追加配置里的 env，`$VAR` 形式还会从宿主机环境展开（[`mcp/stdio.go:37–47`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/mcp/stdio.go#L37-L47)）；对比 exec 工具会走 `scrubSensitiveEnv`（[`env_scrub.go:89–111`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/env_scrub.go#L89-L111)），MCP 没走 | 同左 | **阻塞项 B2** |
 | 8 | 插件进程（`internal/plugin`） | **不在**：宿主机 `exec.CommandContext`，未设 `cmd.Env` 即继承全部环境（[`plugin/process.go:62–69`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/plugin/process.go#L62-L69)） | 同左 | v1 不装插件；**阻塞项 B2** 同类 |
@@ -37,7 +37,7 @@
 | **B2** | MCP / 插件子进程在宿主机运行且继承 gateway 全部环境变量 | v1 不启用 stdio MCP 与插件；Heybe 启 gateway 时只传白名单环境变量（安全跟进 PR）；以后需要 MCP 时由 Heybe 受控 MCP 提供 |
 | **B3** | 渠道在宿主机进程内、绕过 Heybe | v1 不开；v1.1 Telegram 走 Heybe 自建桥（方案 C） |
 
-`web_fetch` 出网（第 5 行）不列阻塞：只读、有 SSRF 防护、v1 需要它；记为风险，写进用户说明。
+`web_fetch` 出网（第 5 行）不列阻塞：只读、有 SSRF 防护（仅内置抓取器）、v1 需要它（D12）；记为风险，写进用户说明。前提是 B1 解除、不配置 web_fetch 提供方链，并完成 t051 §8 的 W1–W5；B1 未解除时 B1 + `web_fetch` 外带是高风险组合。
 
 ## 3. 待 #6 一起实测的清单
 
