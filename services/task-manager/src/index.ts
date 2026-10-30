@@ -51,5 +51,6 @@ export {
   fastClawExecutorFromEnv,
   sessionKeyFor,
   TOOL_ALERT_NOTE,
+  TOOL_FAILED_NOTE,
   type FastClawNodeExecutorOptions,
 } from "./fastclaw-executor.js";
