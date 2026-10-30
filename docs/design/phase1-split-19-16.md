@@ -1,6 +1,7 @@
 # 阶段 1 拆分：#19 Tauri 壳 + 流式聊天、#16 模型提供方添加与连接测试
 
 > 状态：方案，未实现。2026-10-30。关联 #19（T1.3.1）、#16（T1.2.1）。
+> 2026-10-30 更正：DMG 改为**只出 arm64（Apple 芯片 Mac，M1 及以上）**，不出通用包 / x64，Intel Mac 不支持；原“通用包”决定作废（Yang 10-30 改决定，经 Grok Bot 转达）。19-h、第 4 节、第 5 节已同步。
 > 2026-10-30 更新：第 5 节的待定项已由 **Yang 10-30 拍板，经 Grok Bot 转达**（09:15，Asia/Shanghai），结论写入下文各子任务与第 5 节；总表见 `docs/v1-scope.md` §6.1（D7–D12）。
 > 约束（已定）：桌面端 Tauri + React；后端只经 FastClaw `/v1`（v1.4.0，b5ad3dff）；默认云端 DeepSeek（D3/D4），用户可自带 key；本地模型为高级选项（Ollama 需大上下文，见 #76）；分发只走 DMG / heybe.dev；沙箱默认强制（`FASTCLAW_SANDBOX_ENFORCE=1`，见 #6/#7）。
 > 工作量：S ≤ 0.5 天，M ≈ 1–2 天，L ≈ 3–4 天。
@@ -32,7 +33,7 @@ FastClaw gateway（子进程，环境变量白名单 fc_env_bg/child-env，数�
 | 19-e | 停止生成：前端停止 → 服务断开上游连接，消息标“已停止（服务端是否停止未知）”；同会话下一轮前提示（v1.4.0 会回答孤儿消息，#9） | 19-d | S | 点停止 ≤ 300 ms 不再出字；状态文案与 #58 一致 |
 | 19-f | React 聊天界面：消息列表、流式渲染（Markdown 安全渲染，禁原始 HTML）、工具步骤折叠显示（只有 running/done）、告警工具（#67 名单）显眼提示 | 19-d | M | 1 万字回复无卡顿（虚拟滚动或分块）；XSS 用例不执行 |
 | 19-g | 首启引导（最小）：未配置提供方时引导到 #16 的“添加 DeepSeek”一步；沙箱检查失败时阻断聊天并说明（默认强制，不提供“关闭沙箱”按钮）。BoxLite 版本**待 Mac 实测后定（D11）**：就绪检查先同时支持“0.9.5 固定”和“0.10.x + 垫片”两条路径，定案后删掉另一条 | #16-c、#6 | S | 无 key → 只看到引导；沙箱未就绪 → 明确报错，不回退宿主机执行 |
-| 19-h | 打包：**通用 DMG（arm64 + x64，Universal 2，D10 已定）**，签名+公证用 **Slovian Inc 公司的 Apple 开发者账号**（公司申请中，商业化材料在准备）；heybe.dev 下载页链接；不发 App Store/Homebrew。随包的 sidecar（FastClaw、BoxLite 客户端等）都要有 arm64+x64 两份或 lipo 合并 | 19-a..c | M | `lipo -archs` 显示 `x86_64 arm64`；公证通过；Apple Silicon 与 Intel 新 Mac 各双击安装一次，首启通过 19-g（Intel 上沙箱走 Lima，见第 4 节） |
+| 19-h | 打包：**只出 arm64 DMG（`aarch64-apple-darwin`，Apple 芯片 Mac，M1 及以上；D10 10-30 更正，不出通用包 / x64）**，签名+公证用 **Slovian Inc 公司的 Apple 开发者账号**（公司申请中，商业化材料在准备）；heybe.dev 下载页链接；不发 App Store/Homebrew。随包的 sidecar（FastClaw、BoxLite 客户端等）只需 arm64 一份 | 19-a..c | M | `lipo -archs` 显示 `arm64`；公证通过；在 Apple 芯片新 Mac 上双击安装一次，首启通过 19-g；Intel Mac 不支持，不做验收 |
 
 关键路径：19-a → 19-b → 19-d → 19-e/19-f → 19-g → 19-h（约 8–10 人日）。
 
@@ -68,7 +69,7 @@ FastClaw gateway（子进程，环境变量白名单 fc_env_bg/child-env，数�
 - 模型 key 明文进 `fastclaw.db`：16-b 无法完全消除。D8 已接受：只靠数据目录 700/600 + 设置页说明（文案：“为了让本机助理能调用模型，密钥也会保存在 Heybe 数据目录里，只有你的 macOS 账户能读取”）。
 - 沙箱：#6 BoxLite 0.10 与 FastClaw v1.4.0 不兼容，当前靠垫片或固定 0.9.5；D11 待 Mac 实测后定，19-g 的就绪检查要跟着最终方案走。
 - 4 类云提供方只做 mock（D7）：真实接口与文档不一致时只能靠用户反馈发现；连接测试的错误文案要提示“可能是提供方接口有变化”。
-- **通用包的 Intel 半边没有 BoxLite**：BoxLite 官方 README「Supported Platforms」写 macOS 只支持 Apple Silicon，Intel（x86_64）为 “Coming soon”（2026-10-30 查 boxlite-ai/boxlite main）。因此 x64 Mac 上沙箱只能走 Lima（D5 备选），19-g 就绪检查要按架构分支，x64 需要单独在 Intel Mac 上验收一次（目前没有 Intel 测试机，需 Yang 安排或接受“x64 沙箱未实测”）。
+- **Intel Mac 不支持（D10 10-30 更正）**：BoxLite 官方 README「Supported Platforms」写 macOS 只支持 Apple Silicon，Intel（x86_64）为 “Coming soon”（2026-10-30 查 boxlite-ai/boxlite main）。因此只出 arm64 包，19-g 就绪检查不按架构分支，也不做 x64 的 Lima 沙箱分支与 Intel 验收；Lima 仍是 Apple 芯片上 BoxLite 的备选（D5）。
 - 签名公证依赖 Slovian Inc 的 Apple 开发者账号（D10）：账号批下来之前 19-h 只能出未签名的内部构建，不能对外放 DMG。
 - 自定义兼容提供方可指向内网地址：连接测试走 FastClaw 出网，不额外拦私网（用户自填的本地服务是合法用法），但 baseUrl 只接受 http(s)。
 
@@ -79,5 +80,5 @@ FastClaw gateway（子进程，环境变量白名单 fc_env_bg/child-env，数�
 | 1 | 4 类云提供方（OpenAI/Anthropic/OpenRouter/自定义）怎么验收 | 模拟测试 + 文档验收；DeepSeek、Ollama 仍真实验收（D7） | 16-g |
 | 2 | `fastclaw.db` 明文存模型 key | v1 接受；缓解 = 目录 700/文件 600 + 文字说明（D8） | 第 0 节、16-b、第 4 节 |
 | 3 | 关窗后台运行时是否开机自启 | 关窗后台运行；开机自启默认关（D9） | 19-c |
-| 4 | DMG 架构与签名账号 | 通用包（arm64 + x64）；Apple 开发者账号由 Slovian Inc 申请，签名公证用公司账号（D10） | 19-h |
+| 4 | DMG 架构与签名账号 | 只出 arm64（Apple 芯片 Mac，M1 及以上），Intel Mac 不支持（10-30 改决定，原“通用包 arm64 + x64”作废）；Apple 开发者账号由 Slovian Inc 申请，签名公证用公司账号（D10） | 19-h |
 | 5 | BoxLite 固定 0.9.5 还是垫片跟 0.10.x | 待 Mac 实测（#6）后定（D11） | 19-g |

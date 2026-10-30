@@ -77,7 +77,7 @@ AI エージェントを使ったことがない方にも、中身を確認・�
 
 | 機能 | 状況 |
 |---|---|
-| macOS デスクトップアプリ（Tauri + React）、Apple Silicon 優先 | 開発中 |
+| macOS デスクトップアプリ（Tauri + React）、Apple Silicon（M1 以降）のみ | 開発中 |
 | DeepSeek（標準）、OpenAI、Claude（API キー持ち込み）でのストリーミング会話 | 開発中 |
 | Ollama によるローカルモデル（チャットのみ、オフライン可） | 開発中 |
 | Web ページを直接読む検索（出典付き） | 開発中 |
@@ -85,7 +85,7 @@ AI エージェントを使ったことがない方にも、中身を確認・�
 | 標準でサンドボックス：セッションごとにマイクロ VM（BoxLite、代替は Lima） | 検証中 |
 | 大事な操作のクリック承認（書き込み、削除、予算超過） | 開発中 |
 | タスクごとの費用と使用モデルの表示 | 開発中 |
-| heybe.dev から署名・公証済み DMG を配布（Mac App Store なし） | 予定 |
+| heybe.dev から署名・公証済み DMG を配布、Apple Silicon 版のみ（Intel 版なし、Mac App Store なし） | 予定 |
 | 見て・直して・消せる長期記憶 | v1.1 予定 |
 | Telegram などのチャットアプリ | 予定 |
 | エージェントチームの動的編成 | Heybe Pro（将来） |
@@ -166,7 +166,7 @@ v1 では Ollama を使ったオフラインのチャットを予定していま
 操作は標準で隔離されたサンドボックスで行われ、大事な操作はクリックで承認するまで実行されません。タスクはいつでも止められます。</details>
 
 <details><summary><b>Telegram から使えますか？ Windows は？</b></summary>
-Telegram などのチャットアプリは最初のプレビュー後に対応予定です。v1 は Mac（Apple Silicon 優先）のみです。</details>
+Telegram などのチャットアプリは最初のプレビュー後に対応予定です。v1 は Apple Silicon（M1 以降）の Mac のみ対応で、Intel Mac には対応しません。</details>
 
 ## Community 版と Pro 版
 

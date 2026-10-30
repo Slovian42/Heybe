@@ -77,7 +77,7 @@ Heybe 是一個**跑在你自己電腦上的私人 AI 助理**。你像跟朋友
 
 | 功能 | 狀態 |
 |---|---|
-| macOS 桌面應用（Tauri + React），優先支援 Apple Silicon | 開發中 |
+| macOS 桌面應用（Tauri + React），只支援 Apple 晶片（M1 及以上） | 開發中 |
 | 流式對話：DeepSeek（預設）、OpenAI、Claude（自帶 API Key） | 開發中 |
 | 透過 Ollama 使用本機模型（僅聊天，可離線） | 開發中 |
 | 直接讀取網頁的聯網搜尋，標註來源 | 開發中 |
@@ -85,7 +85,7 @@ Heybe 是一個**跑在你自己電腦上的私人 AI 助理**。你像跟朋友
 | 預設開啟沙箱：每個會話一臺微型虛擬機器（Apple Silicon 用 BoxLite，備選 Lima） | 概念驗證中 |
 | 敏感操作點選確認（本機寫入、刪除、超預算） | 開發中 |
 | 每個任務顯示花費和所用模型 | 開發中 |
-| 從 heybe.dev 下載簽名公證的 DMG（不上 Mac App Store） | 計劃中 |
+| 從 heybe.dev 下載簽名公證的 DMG，只有 Apple 晶片版本（不出 Intel 版，不上 Mac App Store） | 計劃中 |
 | 可檢視、修改、刪除的長期記憶 | v1.1 |
 | Telegram 等聊天軟體接入 | 計劃中 |
 | 動態組建 Agent 團隊 | Heybe Pro（以後） |
@@ -169,7 +169,7 @@ Heybe 預設在隔離沙箱裡執行操作，敏感操作前必須你點選確�
 暫時不能。Telegram 等聊天軟體計劃在首個預覽版之後接入。</details>
 
 <details><summary><b>支援 Windows 或 Linux 嗎？</b></summary>
-v1 不支援，只支援 Mac（優先 Apple Silicon）。</details>
+v1 不支援，只支援 Apple 晶片的 Mac（M1 及以上），不支援 Intel Mac。</details>
 
 更多問題見 [docs/faq.md](docs/faq.md)（英文）。
 

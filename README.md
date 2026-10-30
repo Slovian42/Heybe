@@ -79,7 +79,7 @@ Planned after the first preview: a morning briefing on a schedule, price watch, 
 
 | Feature | Status |
 |---|---|
-| Desktop app for macOS (Tauri + React), Apple Silicon first | In development |
+| Desktop app for macOS (Tauri + React), Apple Silicon only (M1 or later) | In development |
 | Streaming chat with DeepSeek (default), OpenAI, Anthropic Claude (bring your own API key) | In development |
 | Local models via Ollama (chat only, offline) | In development |
 | Web search by reading pages directly, with cited sources | In development |
@@ -87,7 +87,7 @@ Planned after the first preview: a morning briefing on a schedule, price watch, 
 | Sandbox on by default: one micro-VM per session (BoxLite on Apple Silicon, Lima as fallback) | Proof of concept |
 | Click-to-approve for sensitive actions (local writes, deletes, over budget) | In development |
 | Cost and model-source shown for every task | In development |
-| Signed and notarized DMG from heybe.dev (no Mac App Store) | Planned |
+| Signed and notarized DMG from heybe.dev, Apple Silicon only (no Intel build, no Mac App Store) | Planned |
 | Long-term memory you can see, edit and delete | Planned for v1.1 |
 | Telegram and other chat apps | Planned |
 | Dynamic agent teams | Heybe Pro (later) |
@@ -182,7 +182,7 @@ Heybe runs actions in an isolated sandbox by default and asks for a click before
 Not yet. Telegram and other chat apps are planned after the first preview.</details>
 
 <details><summary><b>Does it run on Windows or Linux?</b></summary>
-Not in v1. Mac (Apple Silicon first) only.</details>
+Not in v1. Only Macs with Apple Silicon (M1 or later) are supported; Intel Macs are not supported.</details>
 
 More: [docs/faq.md](docs/faq.md).
 

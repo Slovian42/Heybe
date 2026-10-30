@@ -41,7 +41,7 @@ Planned after the first preview. Telegram comes first, then other IM apps.
 Long-term memory is planned for v1.1, with the ability to see, edit and delete anything it remembers.
 
 ### Which Macs are supported?
-macOS on Apple Silicon first. Windows and Linux desktop apps are not planned for v1.
+Only Macs with Apple Silicon (M1 or later). Intel Macs are not supported, and there is no Intel or universal build. Windows and Linux desktop apps are not planned for v1.
 
 ### Where will I download it?
 Only from [heybe.dev](https://heybe.dev), as a signed and notarized DMG. Heybe will not be on the Mac App Store.
