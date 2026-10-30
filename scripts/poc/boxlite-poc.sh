@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Heybe 沙箱概念验证：BoxLite（主线）与 Lima+docker（对照），FastClaw v1.4.0（b5ad3dff）。
 # 用法: scripts/poc/boxlite-poc.sh <step> [backend]
+#   rerun-boxlite | rerun-lima   只重跑 BoxLite 组 / Lima+docker 组（不重装，最后生成 report.md）
 #   all                         按顺序跑全部步骤，某步失败后继续跑不依赖它的步骤，最后生成 report.md（不自动 cleanup）
 #   precheck | install | serve | api-probe | ws-probe | fc-compat | fastclaw-boxlite | setup boxlite | verify boxlite
 #   metrics | lima | fastclaw-docker | setup docker | verify docker | report | cleanup-fastclaw | cleanup
@@ -337,6 +338,7 @@ step_setup() { # backend
   # init 会在没有用户时创建 super_admin "admin" 并打印生成的密码：输出只留内存，不落盘
   local init_out init_rc=0
   init_out=$(fc_env_exec DEEPSEEK_API_KEY fastclaw agents init "$AGENT" --provider deepseek --model "$MODEL" --api-key-env DEEPSEEK_API_KEY 2>&1) || init_rc=$?
+  # shellcheck disable=SC2034  # 有意清空：init 输出可能含管理员密码
   init_out=""
   fc_lock_home "$home"
   [ "$init_rc" = 0 ] || fail "[${backend}] agents init 失败（退出码 ${init_rc}；手动重跑看原因）"
@@ -654,13 +656,27 @@ step_all() {
   step_report
   echo "完成（未自动 cleanup；需要时运行 cleanup）。失败/跳过的步骤见 $REPORT"
 }
+# 组合重跑（已装好的不重装；某步失败照常跳过依赖它的步骤；最后生成 report.md）
+RERUN_BOXLITE=(precheck install serve ws-probe fc-compat fastclaw-boxlite setup-boxlite verify-boxlite metrics)
+RERUN_LIMA=(precheck install lima fastclaw-docker setup-docker verify-docker)
+step_rerun() { # 只重置本组步骤的状态，保留其他步骤上次的结果
+  local s; for s in "$@"; do rm -f "$STATUS_DIR/$s"; done
+  for s in "$@"; do
+    case $s in fastclaw-boxlite) cleanup_fastclaw ;; esac
+    run_one "$s"
+  done
+  step_report
+  echo "完成（未自动 cleanup）。失败/跳过的步骤见 $REPORT"
+}
 
 case "${1:-}" in
   all) step_all ;;
+  rerun-boxlite) step_rerun "${RERUN_BOXLITE[@]}" ;;
+  rerun-lima) step_rerun "${RERUN_LIMA[@]}" ;;
   precheck|install|serve|api-probe|ws-probe|fc-compat|metrics|lima|fastclaw-boxlite|fastclaw-docker) run_single "$1" ;;
   setup|verify) case "${2:-}" in boxlite|docker) run_single "$1-$2" ;; *) echo "用法: $0 $1 boxlite|docker" >&2; exit 2 ;; esac ;;
   report) step_report ;;
   cleanup-fastclaw) cleanup_fastclaw; pass "FastClaw 已停止" ;;
   cleanup) step_cleanup ;;
-  *) sed -n 2,19p "$0"; exit 2 ;;
+  *) sed -n 2,20p "$0"; exit 2 ;;
 esac
