@@ -89,6 +89,9 @@ LIMA_START_TIMEOUT=45m scripts/poc/boxlite-poc.sh all
 ## 4. 单步运行（排查用）
 
 ```bash
+# 组合重跑（不重装，结束生成 report.md）：
+scripts/poc/boxlite-poc.sh rerun-boxlite            # precheck→install→serve→ws-probe→fc-compat→fastclaw-boxlite→setup/verify boxlite→metrics
+LIMA_MIRROR=tuna LIMA_START_TIMEOUT=45m scripts/poc/boxlite-poc.sh rerun-lima   # lima→fastclaw-docker→setup/verify docker；nju / LIMA_IMAGE_FILE / LIMA_IMAGE_URL 亦可
 scripts/poc/boxlite-poc.sh precheck|install|serve|ws-probe|metrics|lima
 scripts/poc/boxlite-poc.sh fastclaw-boxlite && scripts/poc/boxlite-poc.sh setup boxlite && scripts/poc/boxlite-poc.sh verify boxlite
 scripts/poc/boxlite-poc.sh fastclaw-docker  && scripts/poc/boxlite-poc.sh setup docker  && scripts/poc/boxlite-poc.sh verify docker
