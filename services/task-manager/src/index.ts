@@ -53,4 +53,18 @@ export {
   TOOL_ALERT_NOTE,
   TOOL_FAILED_NOTE,
   type FastClawNodeExecutorOptions,
+  type ArtifactCollectOptions,
 } from "./fastclaw-executor.js";
+export {
+  ARTIFACT_ALLOWED_CONTENT_TYPES,
+  ARTIFACT_MAX_BYTES,
+  ArtifactError,
+  WEB_REPORT_FILE,
+  assertArtifactName,
+  assertPublicHttpUrl,
+  buildWebReportPrompt,
+  defaultReportsRoot,
+  normalizeContentType,
+  saveArtifact,
+  type SavedArtifact,
+} from "./artifacts.js";
