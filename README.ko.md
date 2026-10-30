@@ -76,14 +76,14 @@ AI 에이전트를 처음 써 보는 분, 그리고 직접 확인하고 고칠 �
 
 | 기능 | 상태 |
 |---|---|
-| macOS 데스크톱 앱(Tauri + React), Apple Silicon 우선 | 개발 중 |
+| macOS 데스크톱 앱(Tauri + React), Apple Silicon(M1 이상) 전용 | 개발 중 |
 | DeepSeek(기본), OpenAI, Claude(내 API 키) 스트리밍 대화 | 개발 중 |
 | Ollama 로컬 모델(채팅 전용, 오프라인) | 개발 중 |
 | 웹 페이지를 직접 읽는 검색, 출처 표시 | 개발 중 |
 | 창을 닫아도 이어지는 긴 작업(로컬 작업 관리자, SQLite) | 뼈대 병합됨 |
 | 기본 샌드박스: 세션마다 마이크로 VM(BoxLite, 대안 Lima) | 검증 중 |
 | 중요한 작업 클릭 승인, 작업별 비용·모델 표시 | 개발 중 |
-| heybe.dev에서 서명·공증된 DMG 배포(Mac App Store 미출시) | 예정 |
+| heybe.dev에서 서명·공증된 DMG 배포, Apple Silicon 버전만(Intel 버전 없음, Mac App Store 미출시) | 예정 |
 | 보고, 고치고, 지울 수 있는 장기 기억 | v1.1 예정 |
 | Telegram 등 메신저 | 예정 |
 | 에이전트 팀 동적 구성 | Heybe Pro(추후) |
@@ -159,7 +159,7 @@ Community 버전은 무료 오픈소스입니다. 작업은 내 컴퓨터에서 
 v1에서 Ollama를 통한 오프라인 채팅을 계획하고 있습니다. 로컬 모델의 도구 실행은 아직 보장하지 않습니다.</details>
 
 <details><summary><b>Telegram에서 쓸 수 있나요? Windows는요?</b></summary>
-Telegram 등 메신저는 첫 프리뷰 이후 지원 예정입니다. v1은 Mac(Apple Silicon 우선)만 지원합니다.</details>
+Telegram 등 메신저는 첫 프리뷰 이후 지원 예정입니다. v1은 Apple Silicon(M1 이상) Mac만 지원하며 Intel Mac은 지원하지 않습니다.</details>
 
 ## Community와 Pro
 

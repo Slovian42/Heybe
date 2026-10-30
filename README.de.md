@@ -76,14 +76,14 @@ Mehr in [docs/use-cases.md](docs/use-cases.md) (Englisch). Nach der ersten Previ
 
 | Funktion | Stand |
 |---|---|
-| macOS-Desktop-App (Tauri + React), zuerst Apple Silicon | In Entwicklung |
+| macOS-Desktop-App (Tauri + React), nur Apple Silicon (M1 oder neuer) | In Entwicklung |
 | Streaming-Chat mit DeepSeek (Standard), OpenAI, Claude (eigener Schlüssel) | In Entwicklung |
 | Lokale Modelle über Ollama (nur Chat, offline) | In Entwicklung |
 | Websuche durch direktes Lesen der Seiten, mit Quellen | In Entwicklung |
 | Lange Aufgaben, die nach dem Schließen weiterlaufen (lokaler Task-Manager, SQLite) | Grundgerüst gemergt |
 | Sandbox standardmäßig an: eine Micro-VM pro Sitzung (BoxLite; Alternative Lima) | Proof of Concept |
 | Freigabe per Klick, Kosten und Modell bei jeder Aufgabe sichtbar | In Entwicklung |
-| Signierte, notarisierte DMG über heybe.dev (kein Mac App Store) | Geplant |
+| Signierte, notarisierte DMG über heybe.dev, nur für Apple Silicon (keine Intel-Version, kein Mac App Store) | Geplant |
 | Langzeitgedächtnis, das du sehen, ändern und löschen kannst | v1.1 |
 | Telegram und andere Chat-Apps | Geplant |
 | Dynamische Agenten-Teams | Heybe Pro (später) |

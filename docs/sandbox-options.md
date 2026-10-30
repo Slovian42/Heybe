@@ -3,6 +3,7 @@
 > 状态：草案 · 2026-10-22 · 适用 FastClaw v1.4.0（tag commit `b5ad3dff1f230d692e4e1d5ad9ce486f24749964`）
 > 目标：Heybe 首发 macOS，沙箱默认强制开启，终端用户不需要另装 Docker Desktop 或 OrbStack。
 > 约定：查不到可靠来源的写「待核实」，需要上机测的写「待实测」。
+> 2026-10-30 更新：v1 安装包只出 arm64（Apple 芯片 Mac，M1 及以上），Intel Mac 不支持（`v1-scope.md` D10 10-30 更正，Yang 拍板，经 Grok Bot 转达）。下文关于 Intel Mac 的段落只作调研记录，不再是待办；Lima 仍是 Apple 芯片上 BoxLite 的备选。
 
 源码链接前缀：`https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/`（下文简写为 `FC:`）。
 
@@ -152,10 +153,10 @@
 - 理由一：用户零依赖，许可干净（Apache-2.0），可以捆绑进闭源 Pro 分发。
 - 理由二：每个会话一台 micro-VM，隔离强度高于「共享 VM + 容器」，符合「沙箱默认强制」的定位；`allow_net` 和密钥占位符也正好满足助理场景。
 - 理由三：FastClaw v1.4.0 已经有这个后端，Heybe 不需要 fork FastClaw。
-- 代价：首发只支持 Apple Silicon。Intel Mac 用户只能用方案 3（自装 Docker），或者远程沙箱兜底。
+- 代价：首发只支持 Apple Silicon。（10-30 已定：v1 不支持 Intel Mac，只出 arm64 包，不为 Intel 做兜底。）
 
 **后备方案：Lima（vz）+ dockerd + 捆绑 docker CLI，通过 `DOCKER_HOST` 交给 FastClaw**
-- 如果 BoxLite 实测在 WS、稳定性或体积上过不了关，就切到这个方案。它也能覆盖 Intel Mac。
+- 如果 BoxLite 实测在 WS、稳定性或体积上过不了关，就切到这个方案。（它技术上也能覆盖 Intel Mac，但 v1 不支持 Intel，只在 Apple 芯片上用作备选。）
 
 **通用要求（与选哪个方案无关）**
 - Heybe 启动 FastClaw 时固定设置 `FASTCLAW_SANDBOX_ENABLED=1`、`FASTCLAW_SANDBOX_ENFORCE=1`，**不设置** `FASTCLAW_ALLOW_HOST_EXEC`，网络策略显式配置。
@@ -167,7 +168,7 @@
 |---|---|---|
 | 0（现在，开发） | 开发者使用 OrbStack 和 docker 后端（已经写在 phase0-dev-env.md）。Slovian Inc 需要购买 OrbStack Pro 许可。 | 开发环境 |
 | 1（2 周内，PoC） | 在 Apple Silicon Mac 上跑 `boxlite serve`，再用 FastClaw v1.4.0 的 boxlite 后端完整跑一遍：exec 流式输出、文件读写、camoufox、端口预览。同时用 Lima vz + dockerd 做对照测试。 | 实测报告，以及选型定稿 |
-| 2（里程碑内，打包） | Tauri sidecar 管理 boxlite（或 Lima）的生命周期；Developer ID 签名、hypervisor/virtualization entitlement、公证；首次运行时下载并预取沙箱镜像，带进度提示；系统和芯片检测（Intel 走后备方案，或者提示安装 Docker）。 | 可公证的 .dmg |
+| 2（里程碑内，打包） | Tauri sidecar 管理 boxlite（或 Lima）的生命周期；Developer ID 签名、hypervisor/virtualization entitlement、公证；首次运行时下载并预取沙箱镜像，带进度提示；系统和芯片检测（只出 arm64 包；Intel Mac 不支持，不做 x64 后备分支）。 | 可公证的 .dmg |
 | 3（之后） | MCP 放进沙箱运行；用 sandbox-exec 再包一层 VM 辅助进程；评估 apple/container 作为 macOS 26 的可选后端；Pro 版提供云沙箱兜底。 | 纵深防御，覆盖更多机型 |
 
 ## 6. 待实测 / 待核实清单
@@ -177,7 +178,7 @@
 3. BoxLite macOS 打包需要的 entitlement（hypervisor？），以及能否放进 Tauri .app 后正常签名和公证。
 4. libkrun 和 libkrunfw（内核 GPL-2.0）在闭源分发中的合规做法。
 5. 给 FastClaw 进程设置 `DOCKER_HOST` 后，docker 后端能否指向 Lima 或 podman 的 socket（源码推断可以，待实测）；podman 兼容 API 对 `docker port` 和 `--add-host host-gateway` 的支持情况。
-6. Lima vz 的最低系统版本、Intel 上的表现、冷启动时间、安装体积。
+6. Lima vz 的最低系统版本、冷启动时间、安装体积（Apple 芯片；Intel 不再测，v1 不支持）。
 7. apple/container 有没有 Docker API 兼容层；macOS 15 下的实际限制。
 8. App Sandbox 和 Virtualization.framework、本地守护进程能否共存。
 9. `sandbox-exec` 在 macOS 26 上的状态，以及 Apple 有没有移除计划。

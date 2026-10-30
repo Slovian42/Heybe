@@ -76,14 +76,14 @@ Mais em [docs/use-cases.md](docs/use-cases.md) (em inglês). Depois da primeira 
 
 | Recurso | Status |
 |---|---|
-| App para macOS (Tauri + React), Apple Silicon primeiro | Em desenvolvimento |
+| App para macOS (Tauri + React), somente Apple Silicon (M1 ou posterior) | Em desenvolvimento |
 | Chat em streaming com DeepSeek (padrão), OpenAI e Claude (sua chave) | Em desenvolvimento |
 | Modelos locais com Ollama (só chat, offline) | Em desenvolvimento |
 | Pesquisa web lendo as páginas diretamente, com fontes | Em desenvolvimento |
 | Tarefas longas que continuam após fechar a janela (gerenciador local, SQLite) | Base integrada |
 | Sandbox por padrão: uma micro-VM por sessão (BoxLite; alternativa Lima) | Prova de conceito |
 | Aprovação por clique, custo e modelo visíveis em cada tarefa | Em desenvolvimento |
-| DMG assinado e notarizado em heybe.dev (sem Mac App Store) | Planejado |
+| DMG assinado e notarizado em heybe.dev, somente Apple Silicon (sem versão Intel, sem Mac App Store) | Planejado |
 | Memória de longo prazo que você vê, edita e apaga | v1.1 |
 | Telegram e outros apps de chat | Planejado |
 | Equipes de agentes dinâmicas | Heybe Pro (depois) |

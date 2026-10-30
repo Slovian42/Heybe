@@ -76,14 +76,14 @@ Más en [docs/use-cases.md](docs/use-cases.md) (en inglés). Después de la prim
 
 | Función | Estado |
 |---|---|
-| App de escritorio para macOS (Tauri + React), primero Apple Silicon | En desarrollo |
+| App de escritorio para macOS (Tauri + React), solo Apple Silicon (M1 o posterior) | En desarrollo |
 | Chat en streaming con DeepSeek (por defecto), OpenAI y Claude (tu propia clave) | En desarrollo |
 | Modelos locales con Ollama (solo chat, sin conexión) | En desarrollo |
 | Búsqueda web leyendo páginas directamente, con fuentes | En desarrollo |
 | Tareas largas que siguen al cerrar la ventana (gestor local, SQLite) | Base fusionada |
 | Sandbox por defecto: una micro-VM por sesión (BoxLite; alternativa Lima) | Prueba de concepto |
 | Aprobación con clic, coste y modelo visibles en cada tarea | En desarrollo |
-| DMG firmado y notarizado desde heybe.dev (sin Mac App Store) | Planeado |
+| DMG firmado y notarizado desde heybe.dev, solo para Apple Silicon (sin versión Intel, sin Mac App Store) | Planeado |
 | Memoria a largo plazo que puedes ver, editar y borrar | v1.1 |
 | Telegram y otras apps de chat | Planeado |
 | Equipos de agentes dinámicos | Heybe Pro (más adelante) |

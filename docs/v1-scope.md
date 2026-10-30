@@ -88,11 +88,13 @@ v1 = **Mac、单用户、以 LLM 为核心的 Heybe 开源版（开发者预览�
 
 不改变 D1–D6 和 M1–M20 的范围，只补实现口径。同日 Yang 也确认合并 #77、#76、#78、#79。
 
+> 2026-10-30 更正：D10 的 DMG 架构由“通用包（arm64 + x64）”改为“只出 arm64（Apple 芯片 Mac）”，Intel Mac 不支持，原通用版决定作废（Yang 10-30 改决定，经 Grok Bot 转达）。
+
 | ID | 决定 | 结论 | 影响 / 文档 |
 |---|---|---|---|
 | D7 | #16 六类模型提供方怎么验收 | ✅ OpenAI、Anthropic、OpenRouter、自定义兼容 4 类用模拟测试 + 文档验收；DeepSeek、Ollama 仍真实验收 | #16、M4；`docs/design/phase1-split-19-16.md` 16-g |
 | D8 | FastClaw 把模型 key 明文存进 `fastclaw.db` | ✅ v1 接受；缓解 = 数据目录 700、文件 600 + 设置页与文档写明 | #16、#19、#72；确认单第 25 条 |
 | D9 | 关窗与开机自启 | ✅ 关窗后 Heybe 后台继续运行；开机自启默认关 | #19（19-c） |
-| D10 | DMG 架构与签名账号 | ✅ 通用包（arm64 + x64）；Apple 开发者账号由 Slovian Inc 申请，签名公证用公司账号（商业化材料准备中） | M20、#43、#19（19-h）；注意 BoxLite 暂不支持 Intel Mac，x64 沙箱走 Lima |
+| D10 | DMG 架构与签名账号 | ✅ **只出 arm64（Apple 芯片 Mac，M1 及以上）**，不出通用包 / x64，Intel Mac 不支持（2026-10-30 Yang 改决定，经 Grok Bot 转达；同日早先的“通用包 arm64 + x64”决定作废）；Apple 开发者账号由 Slovian Inc 申请，签名公证用公司账号（商业化材料准备中） | M20、#43、#19（19-h）；构建目标只有 `aarch64-apple-darwin`；沙箱 BoxLite，Lima 仍为 Apple 芯片上的备选，不做 x64 Lima 分支 |
 | D11 | BoxLite 版本 | ⏳ Mac 实测后再定：固定 0.9.5，或经垫片跟 0.10.x | #6、#19（19-g） |
 | D12 | #12 抓网页方式 | ✅ 继续用 FastClaw 内置 `web_fetch`（与技术建议“Heybe 先抓取”相反）。`web_fetch` 在宿主机侧运行、不受沙箱网络限制，这一风险已写明并按缓解推进；评估结论：风险中、不单独卡发布，W1–W5 为发布前必做，**不得配置 FastClaw 的 web_fetch 提供方链** | M15、#12、#19；`docs/design/t051-web-report.md` §7–8；`docs/t032-tool-isolation.md` 第 5 行；确认单第 24 条 |
