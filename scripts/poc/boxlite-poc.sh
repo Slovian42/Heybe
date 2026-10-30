@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 # Heybe 沙箱概念验证：BoxLite（主线）与 Lima+docker（对照），FastClaw v1.4.0（b5ad3dff）。
 # 用法: scripts/poc/boxlite-poc.sh <step> [backend]
+#   rerun-boxlite | rerun-lima   只重跑 BoxLite 组 / Lima+docker 组（不重装，最后生成 report.md）
 #   all                         按顺序跑全部步骤，某步失败后继续跑不依赖它的步骤，最后生成 report.md（不自动 cleanup）
-#   precheck | install | serve | fastclaw-boxlite | setup boxlite | verify boxlite | metrics
-#   lima | fastclaw-docker | setup docker | verify docker | report | cleanup-fastclaw | cleanup
+#   precheck | install | serve | api-probe | ws-probe | fc-compat | fastclaw-boxlite | setup boxlite | verify boxlite
+#   metrics | lima | fastclaw-docker | setup docker | verify docker | report | cleanup-fastclaw | cleanup
+#   单步重跑：serve = 启动（已在跑则复用）+ 探测前缀；ws-probe / fc-compat 可单独跑，不会重装。
+# BoxLite REST（0.10.x 实测源码）：serve 无租户段，GET /v1/boxes；0.9.5 及更早是 /v1/default/boxes。
+#   脚本先探测（/v1/me 的 prefix → /v1 → /v1/default → /api/v1…），把命中的前缀写进报告；全 404 就报错并打印探测表。
+#   BOXLITE_API_BASE=/v1 可强制前缀。BOXLITE_SHIM=auto|1|0：FastClaw v1.4.0 发送的 auto_remove 被 0.10.x 拒绝时，
+#   自动在 127.0.0.1:${BOXLITE_SHIM_PORT:-8101} 起兼容垫片（boxlite-shim.py，只删这个字段）。
+# Lima 镜像（仅新建实例时生效）：LIMA_MIRROR=tuna|nju [LIMA_UBUNTU=26.04|24.04]，或 LIMA_IMAGE_URL=https://…，
+#   或 LIMA_IMAGE_FILE=/abs/path.img（本地文件）；LIMA_IMAGE_DIGEST=sha256:… 可选（预设镜像自带）。
 # 密钥：
 #   DEEPSEEK_API_KEY  从 ${HEYBE_POC_ENV:-~/.heybe-poc.env} 读取（文件权限必须是 600，内容一行 DEEPSEEK_API_KEY=...）
 #   FastClaw apikey   由脚本自动生成，只写进 ${POC_HOME}/<backend>/fastclaw-apikey（600），不输出到终端
@@ -26,7 +34,12 @@ LOG_DIR="$POC_HOME/logs"
 RESULTS="$POC_HOME/results.tsv"
 REPORT="$POC_HOME/report.md"
 STATUS_DIR="$POC_HOME/status"
-BOXLITE_PORT=8100
+BOXLITE_PORT="${BOXLITE_PORT:-8100}"
+BOXLITE_SHIM="${BOXLITE_SHIM:-auto}"                # auto=按 fc-compat 结果决定；1=强制；0=关闭
+BOXLITE_SHIM_PORT="${BOXLITE_SHIM_PORT:-8101}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+API_FILE="$POC_HOME/boxlite.api"                    # 探测到的 REST 前缀，如 /v1
+COMPAT_FILE="$POC_HOME/boxlite.fc-compat"           # ok | reject_auto_remove
 FASTCLAW_PORT="${FASTCLAW_PORT:-18953}"
 AGENT="${HEYBE_POC_AGENT:-poc}"
 MODEL="${HEYBE_POC_MODEL:-deepseek/deepseek-chat}"
@@ -112,40 +125,101 @@ step_install() {
     echo; echo '$ fastclaw apikey create --help'; fastclaw apikey create --help 2>&1 || true; } >"$LOG_DIR/help.txt"
 }
 
-# ---------------------------------------------------------------- serve + WS probe
+# ---------------------------------------------------------------- serve + REST 前缀探测 + WS probe
+# 路由来源：boxlite v0.10.7 src/cli/src/commands/serve/mod.rs build_router()（/v1/boxes、/v1/boxes/{id}/start|exec、
+#   /v1/boxes/{id}/executions/{exec}/attach、/v1/me、/v1/config）；openapi/box.openapi.yaml：
+#   "boxlite serve answers at http://localhost:8100/v1/…"，单租户部署不带 {prefix} 段。serve 不提供 /openapi.json。
+bl_url() { echo "http://127.0.0.1:${BOXLITE_PORT}$1"; }
+http_code() { # method url outfile [json] [max_time] → 打印 HTTP 状态码（连不上为 000）
+  local m=$1 u=$2 o=$3 d=${4:-} t=${5:-30} c
+  if [ -n "$d" ]; then
+    c=$(curl -sS -m "$t" -o "$o" -w '%{http_code}' -X "$m" -H 'Content-Type: application/json' -d "$d" "$u" 2>/dev/null) || true
+  else
+    c=$(curl -sS -m "$t" -o "$o" -w '%{http_code}' -X "$m" "$u" 2>/dev/null) || true
+  fi
+  echo "${c:-000}"
+}
+load_api_base() {
+  if [ -n "${BOXLITE_API_BASE:-}" ]; then API_BASE=$BOXLITE_API_BASE
+  elif [ -s "$API_FILE" ]; then API_BASE=$(cat "$API_FILE")
+  else fail "还不知道 BoxLite REST 前缀（先跑：scripts/poc/boxlite-poc.sh api-probe）"; fi
+}
+
 step_serve() {
   info "启动 boxlite serve（仅 127.0.0.1:${BOXLITE_PORT}）"
-  if ! curl -sS -o /dev/null -m 2 "http://127.0.0.1:$BOXLITE_PORT/" 2>/dev/null; then
+  if ! curl -sS -o /dev/null -m 2 "$(bl_url /v1/config)" 2>/dev/null; then
     nohup boxlite serve --host 127.0.0.1 --port "$BOXLITE_PORT" >"$LOG_DIR/boxlite-serve.log" 2>&1 &
     echo $! >"$POC_HOME/boxlite.pid"
-    wait_http "http://127.0.0.1:$BOXLITE_PORT/" 20 || fail "boxlite serve 未起来，见 ${LOG_DIR}/boxlite-serve.log（flag 待核实：boxlite serve --help）"
+    wait_http "$(bl_url /v1/config)" 20 || fail "boxlite serve 未起来，见 ${LOG_DIR}/boxlite-serve.log"
+  else
+    info "127.0.0.1:${BOXLITE_PORT} 已有服务在跑，复用（不重启）"
   fi
   lsof -nP -iTCP:"$BOXLITE_PORT" -sTCP:LISTEN | awk 'NR>1{print $9}' | grep -qv '^127\.0\.0\.1:' \
     && fail "boxlite serve 监听了非回环地址（lsof -nP -iTCP:${BOXLITE_PORT} -sTCP:LISTEN）"
   pass "boxlite serve 只监听 127.0.0.1:${BOXLITE_PORT}"
-  local code; code=$(curl -sS -o "$LOG_DIR/probe-list.json" -w '%{http_code}' "http://127.0.0.1:$BOXLITE_PORT/v1/default/boxes" || true)
-  rec "boxlite_rest_list_http=$code"
-  [ "$code" = 200 ] || fail "REST /v1/default/boxes 返回 ${code}（路径前缀待核实：curl -s http://127.0.0.1:${BOXLITE_PORT}/openapi.json | head）"
-  pass "REST /v1/default/boxes 可用"
+  step_api_probe
+}
+
+step_api_probe() {
+  info "探测 BoxLite REST 前缀（127.0.0.1:${BOXLITE_PORT}）"
+  local tbl="$LOG_DIR/boxlite-api-probe.txt" code p mp cands found=""
+  printf '请求\tHTTP\n' >"$tbl"
+  for p in /openapi.json /v1/openapi.json /v1/config /v1/me; do
+    code=$(http_code GET "$(bl_url "$p")" "$LOG_DIR/probe$(echo "$p" | tr '/.' '__')" "" 5)
+    printf 'GET %s\t%s\n' "$p" "$code" >>"$tbl"
+  done
+  # openapi 规定客户端从 GET /v1/me 的 Principal.path_prefix 取路由段（serve 实现里字段名是 prefix，值为 null）
+  mp=$(python3 -c 'import sys,json
+try:
+    d=json.load(open(sys.argv[1])); print((d.get("path_prefix") or d.get("prefix") or "").strip("/"))
+except Exception: print("")' "$LOG_DIR/probe_v1_me" 2>/dev/null || true)
+  cands="${BOXLITE_API_BASE:-}"
+  [ -n "$mp" ] && cands="$cands /v1/$mp"
+  cands="$cands /v1 /v1/default /api/v1 /api/v1/default"
+  for p in $cands; do
+    code=$(http_code GET "$(bl_url "$p/boxes")" "$LOG_DIR/probe-list.json" "" 10)
+    printf 'GET %s/boxes\t%s\n' "$p" "$code" >>"$tbl"
+    if [ "$code" = 200 ]; then found=$p; break; fi
+  done
+  cat "$tbl"
+  rec "boxlite_me_prefix=${mp:-null}"
+  if [ -z "$found" ]; then
+    rec "boxlite_rest_prefix=none"
+    fail "BoxLite REST 前缀探测全部失败（见上表 / ${tbl}）。0.10.x 应为 GET /v1/boxes，0.9.5 及更早为 /v1/default/boxes。排查：boxlite --version；curl -i $(bl_url /v1/boxes)；tail ${LOG_DIR}/boxlite-serve.log；确定后可用 BOXLITE_API_BASE=/v1 强制。"
+  fi
+  echo "$found" >"$API_FILE"
+  rec "boxlite_rest_prefix=$found boxlite_rest_list_http=200"
+  pass "BoxLite REST 前缀 = ${found}（GET ${found}/boxes → 200；已写入 ${API_FILE}）"
 }
 
 step_ws_probe() {
   info "WebSocket attach 直测（FastClaw 依赖 GET …/executions/{id}/attach）"
-  local base="http://127.0.0.1:$BOXLITE_PORT/v1/default" t0 t1 box exe
+  load_api_base
+  local base; base=$(bl_url "$API_BASE")
+  local t0 t1 box exe code o="$LOG_DIR/ws-probe-http.json"
   t0=$(now_ms)
-  box=$(curl -fsS -X POST "$base/boxes" -H 'Content-Type: application/json' -d "{\"image\":\"$SANDBOX_IMAGE\",\"auto_remove\":true}" \
-        | python3 -c 'import sys,json;print(json.load(sys.stdin)["box_id"])') || fail "创建 box 失败"
-  curl -fsS -X POST "$base/boxes/$box/start" -o /dev/null || fail "start box 失败"
+  # 0.10.x CreateBoxRequest 是 deny_unknown_fields 且没有 auto_remove：只发 image，结束时显式 DELETE
+  code=$(http_code POST "$base/boxes" "$o" "{\"image\":\"$SANDBOX_IMAGE\"}" 900)
+  [ "$code" = 201 ] || [ "$code" = 200 ] || fail "创建 box 失败：POST ${API_BASE}/boxes → HTTP ${code}：$(head -c 300 "$o" 2>/dev/null)"
+  box=$(python3 -c 'import sys,json;print(json.load(open(sys.argv[1]))["box_id"])' "$o") || fail "创建 box 响应里没有 box_id：$(head -c 300 "$o")"
+  code=$(http_code POST "$base/boxes/$box/start" "$o" "" 300)
+  case $code in 2*) ;; *) curl -sS -X DELETE "$base/boxes/$box?force=true" -o /dev/null || true
+    fail "start box 失败：POST ${API_BASE}/boxes/{id}/start → HTTP ${code}：$(head -c 300 "$o")" ;; esac
   t1=$(now_ms); rec "boxlite_cold_create_start_ms=$((t1-t0)) (首次含镜像拉取)"
-  exe=$(curl -fsS -X POST "$base/boxes/$box/exec" -H 'Content-Type: application/json' \
-        -d '{"command":"sh","args":["-c","for i in 1 2 3; do echo HEYBE_WS_$i; sleep 1; done"]}' \
-        | python3 -c 'import sys,json;print(json.load(sys.stdin)["execution_id"])') || fail "exec 失败（请求体字段待核实）"
-  python3 - "$BOXLITE_PORT" "$box" "$exe" <<'PY' 2>&1 | tee "$LOG_DIR/ws-probe.txt"
+  code=$(http_code POST "$base/boxes/$box/exec" "$o" '{"command":"sh","args":["-c","for i in 1 2 3; do echo HEYBE_WS_$i; sleep 1; done"]}' 60)
+  if [ "$code" != 201 ] && [ "$code" != 200 ]; then
+    curl -sS -X DELETE "$base/boxes/$box?force=true" -o /dev/null || true
+    fail "exec 失败：POST ${API_BASE}/boxes/{id}/exec → HTTP ${code}：$(head -c 300 "$o")"
+  fi
+  exe=$(python3 -c 'import sys,json;print(json.load(open(sys.argv[1]))["execution_id"])' "$o") || fail "exec 响应里没有 execution_id"
+  python3 - "$BOXLITE_PORT" "$API_BASE" "$box" "$exe" <<'PY' 2>&1 | tee "$LOG_DIR/ws-probe.txt"
 import sys,socket,base64,os
-port,box,exe=sys.argv[1:]
+port,api,box,exe=sys.argv[1:]
 s=socket.create_connection(("127.0.0.1",int(port)),timeout=15)
 key=base64.b64encode(os.urandom(16)).decode()
-s.send((f"GET /v1/default/boxes/{box}/executions/{exe}/attach HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+path=f"{api}/boxes/{box}/executions/{exe}/attach"
+print("attach_path:",f"{api}/boxes/{{box}}/executions/{{exec}}/attach")
+s.send((f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n"
         f"Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
 data=b""
 while b"\r\n\r\n" not in data:
@@ -169,7 +243,55 @@ PY
   curl -fsS -X DELETE "$base/boxes/$box?force=true" -o /dev/null || true
   grep -q 'handshake:.* 101 ' "$LOG_DIR/ws-probe.txt" && grep -q 'frames_with_marker: 3 /3' "$LOG_DIR/ws-probe.txt" \
     || fail "WebSocket attach 不可用 —— 最大风险点命中（见 ${LOG_DIR}/ws-probe.txt）"
-  pass "WebSocket attach 流式输出 3/3"
+  pass "WebSocket attach 流式输出 3/3（${API_BASE}/boxes/{id}/executions/{exec}/attach）"
+}
+
+# FastClaw v1.4.0（internal/sandbox/boxlite_executor.go）的两处假设与 0.10.x 对照：
+#   1) 路径：一律拼 {URL}/{PREFIX}/boxes…，PREFIX 为空时被改成 "default"，无法表达"无前缀"；
+#      解法：URL=http://127.0.0.1:8100（不带 /v1）+ PREFIX=v1 → /v1/boxes…，WS attach 同理（attachWebsocketURL）。
+#   2) 创建体固定带 "auto_remove": true；0.10.0 起 CreateBoxRequest 删掉该字段且 deny_unknown_fields → 整体拒绝。
+# 探针：{"auto_remove":true,"cpus":"heybe-probe"} 在新旧版本都必然 4xx，不会创建 box；按错误信息区分。
+step_fc_compat() {
+  info "FastClaw v1.4.0 创建请求兼容性（探针必然失败，不创建 box）"
+  load_api_base
+  local o="$LOG_DIR/fc-compat-create.json" code verdict box
+  code=$(http_code POST "$(bl_url "$API_BASE/boxes")" "$o" '{"auto_remove":true,"cpus":"heybe-probe"}' 30)
+  if grep -qi 'unknown field' "$o" 2>/dev/null && grep -q 'auto_remove' "$o" 2>/dev/null; then verdict=reject_auto_remove
+  elif grep -qi 'invalid type\|cpus' "$o" 2>/dev/null; then verdict=ok
+  else verdict=unknown; fi
+  case $code in 2*)  # 意外创建成功：立刻删掉
+    box=$(python3 -c 'import sys,json;print(json.load(open(sys.argv[1])).get("box_id",""))' "$o" 2>/dev/null || true)
+    [ -n "$box" ] && curl -sS -X DELETE "$(bl_url "$API_BASE/boxes/$box")?force=true" -o /dev/null || true
+    verdict=ok ;; esac
+  echo "$verdict" >"$COMPAT_FILE"
+  rec "fastclaw_create_compat=$verdict fastclaw_create_probe_http=$code fastclaw_env_prefix=${API_BASE#/}"
+  echo "探针响应（HTTP ${code}）：$(head -c 300 "$o" 2>/dev/null)"
+  case $verdict in
+    reject_auto_remove)
+      if [ "$BOXLITE_SHIM" = 0 ]; then
+        pass "已判定：BoxLite 拒绝 FastClaw v1.4.0 的 auto_remove（HTTP ${code}）；BOXLITE_SHIM=0，fastclaw-boxlite 将直连并预期创建 box 失败"
+      else
+        pass "已判定：BoxLite 拒绝 FastClaw v1.4.0 的 auto_remove（HTTP ${code}）→ fastclaw-boxlite 经兼容垫片 127.0.0.1:${BOXLITE_SHIM_PORT} 转发"
+      fi ;;
+    ok) pass "FastClaw v1.4.0 创建请求体与该 BoxLite 版本兼容（HTTP ${code}）" ;;
+    *) fail "无法判定 FastClaw 创建请求体是否兼容（HTTP ${code}，响应见 ${o}）" ;;
+  esac
+}
+
+shim_needed() {
+  case $BOXLITE_SHIM in 1) return 0 ;; 0) return 1 ;; esac
+  [ "$(cat "$COMPAT_FILE" 2>/dev/null)" = reject_auto_remove ]
+}
+start_shim() {
+  load_api_base
+  if curl -sS -o /dev/null -m 2 "http://127.0.0.1:${BOXLITE_SHIM_PORT}${API_BASE}/boxes" 2>/dev/null; then
+    pass "兼容垫片已在 127.0.0.1:${BOXLITE_SHIM_PORT} 运行"; return 0
+  fi
+  nohup python3 "$SCRIPT_DIR/boxlite-shim.py" "$BOXLITE_SHIM_PORT" "$BOXLITE_PORT" >"$LOG_DIR/boxlite-shim.log" 2>&1 &
+  echo $! >"$POC_HOME/boxlite-shim.pid"
+  wait_http "http://127.0.0.1:${BOXLITE_SHIM_PORT}${API_BASE}/boxes" 10 || fail "兼容垫片未起来，见 ${LOG_DIR}/boxlite-shim.log"
+  rec "boxlite_shim=127.0.0.1:${BOXLITE_SHIM_PORT}"
+  pass "兼容垫片 127.0.0.1:${BOXLITE_SHIM_PORT} → 127.0.0.1:${BOXLITE_PORT}（只删除 POST …/boxes 里的 auto_remove）"
 }
 
 # ---------------------------------------------------------------- fastclaw gateway
@@ -178,8 +300,12 @@ fc_env() { # backend：导出该后端的 FastClaw 环境（不含 FASTCLAW_ALLO
   export FASTCLAW_PORT FASTCLAW_HOME; FASTCLAW_HOME=$(home_for "$1"); mkdir -p "$FASTCLAW_HOME"
   export FASTCLAW_SANDBOX_ENABLED=1 FASTCLAW_SANDBOX_ENFORCE=1 FASTCLAW_SANDBOX_BACKEND="$1"
   if [ "$1" = boxlite ]; then
-    export FASTCLAW_SANDBOX_BOXLITE_URL="http://127.0.0.1:$BOXLITE_PORT/v1" FASTCLAW_SANDBOX_BOXLITE_PREFIX=default
-    export BOXLITE_API_KEY="${BOXLITE_API_KEY:-local-poc}"   # 本地 serve 未加 --api-key 时为宽松模式，占位值（待核实）
+    # FastClaw 拼 {URL}/{PREFIX}/boxes：URL 不带路径，PREFIX=探测到的前缀去掉开头 /（0.10.x → v1；0.9.5 → v1/default）
+    load_api_base
+    local port=$BOXLITE_PORT; if shim_needed; then port=$BOXLITE_SHIM_PORT; fi
+    export FASTCLAW_SANDBOX_BOXLITE_URL="http://127.0.0.1:${port}" FASTCLAW_SANDBOX_BOXLITE_PREFIX="${API_BASE#/}"
+    # serve 未设 --api-key / BOXLITE_SERVE_API_KEY 时 auth_allows 放行任何请求（serve/mod.rs）；FastClaw 要求非空，给占位值
+    export BOXLITE_API_KEY="${BOXLITE_API_KEY:-local-poc}"
   else
     export DOCKER_HOST="unix://$HOME/.lima/$LIMA_NAME/sock/docker.sock"
   fi
@@ -187,7 +313,10 @@ fc_env() { # backend：导出该后端的 FastClaw 环境（不含 FASTCLAW_ALLO
 
 start_fastclaw() { # backend
   local backend=$1
-  load_deepseek; fc_env "$backend"
+  load_deepseek
+  if [ "$backend" = boxlite ] && shim_needed; then start_shim; fi
+  fc_env "$backend"
+  [ "$backend" = boxlite ] && rec "fastclaw_boxlite_url=${FASTCLAW_SANDBOX_BOXLITE_URL} fastclaw_boxlite_prefix=${FASTCLAW_SANDBOX_BOXLITE_PREFIX}"
   if curl -sS -o /dev/null -m 2 "http://127.0.0.1:$FASTCLAW_PORT/" 2>/dev/null; then
     [ "$(cat "$POC_HOME/fastclaw.backend" 2>/dev/null)" = "$backend" ] || fail "端口 ${FASTCLAW_PORT} 已被其他 FastClaw 占用（先跑 cleanup-fastclaw）"
     pass "FastClaw(backend=${backend}) 已在运行"; return 0
@@ -209,6 +338,7 @@ step_setup() { # backend
   # init 会在没有用户时创建 super_admin "admin" 并打印生成的密码：输出只留内存，不落盘
   local init_out init_rc=0
   init_out=$(fc_env_exec DEEPSEEK_API_KEY fastclaw agents init "$AGENT" --provider deepseek --model "$MODEL" --api-key-env DEEPSEEK_API_KEY 2>&1) || init_rc=$?
+  # shellcheck disable=SC2034  # 有意清空：init 输出可能含管理员密码
   init_out=""
   fc_lock_home "$home"
   [ "$init_rc" = 0 ] || fail "[${backend}] agents init 失败（退出码 ${init_rc}；手动重跑看原因）"
@@ -297,6 +427,42 @@ step_metrics() {
 }
 
 # ---------------------------------------------------------------- lima
+# 镜像覆盖：limactl start --set 在模板 Embed（合并 base: template:_images/ubuntu-lts）之后执行（lima v2.2.1
+#   cmd/limactl/start.go），所以 `.images = [...]` 会整体替换镜像列表，不会再回退到 cloud-images.ubuntu.com。
+# 本地文件：location 可写绝对路径或 file:///abs/path（pkg/downloader/downloader.go canonicalLocalPath），digest 也会校验。
+# 预设地址都核对过 HTTP 200、qcow2 魔数与上游 SHA256SUMS（2026-10-29）；带日期的目录几个月后会被清理，届时改用 LIMA_IMAGE_URL。
+LIMA_SET=""
+lima_image_expr() { # → 设置 LIMA_SET（空=用模板自带镜像）与 LIMA_IMAGE_DESC
+  local loc="" dig="${LIMA_IMAGE_DIGEST:-}" ver="${LIMA_UBUNTU:-26.04}" pd=""
+  LIMA_SET=""; LIMA_IMAGE_DESC="template-default"
+  if [ -n "${LIMA_IMAGE_FILE:-}" ]; then
+    [ -f "$LIMA_IMAGE_FILE" ] || fail "LIMA_IMAGE_FILE=${LIMA_IMAGE_FILE} 不存在"
+    loc="$(cd "$(dirname "$LIMA_IMAGE_FILE")" && pwd)"
+    loc="${loc%/}/$(basename "$LIMA_IMAGE_FILE")"
+    LIMA_IMAGE_DESC="file:$(basename "$loc")"
+  elif [ -n "${LIMA_IMAGE_URL:-}" ]; then
+    loc=$LIMA_IMAGE_URL; LIMA_IMAGE_DESC="url:${loc}"
+  elif [ -n "${LIMA_MIRROR:-}" ]; then
+    case "${LIMA_MIRROR}:${ver}" in
+      tuna:26.04) loc="https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/resolute/20260927/resolute-server-cloudimg-arm64.img"
+                  pd="sha256:63a93bd5a8d76e33b15ceb5daa3657bd79be804748051ab178e643b0f5da22e7" ;;
+      nju:26.04)  loc="https://mirrors.nju.edu.cn/ubuntu-cloud-images/releases/resolute/release-20260927/ubuntu-26.04-server-cloudimg-arm64.img"
+                  pd="sha256:63a93bd5a8d76e33b15ceb5daa3657bd79be804748051ab178e643b0f5da22e7" ;;
+      tuna:24.04) loc="https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/noble/20261017/noble-server-cloudimg-arm64.img"
+                  pd="sha256:50e24e1fb79e89116e939d90aa7738f7af48c442fa1bc2510131e0b39c50348e" ;;
+      nju:24.04)  loc="https://mirrors.nju.edu.cn/ubuntu-cloud-images/releases/noble/release-20261017/ubuntu-24.04-server-cloudimg-arm64.img"
+                  pd="sha256:50e24e1fb79e89116e939d90aa7738f7af48c442fa1bc2510131e0b39c50348e" ;;
+      *) fail "LIMA_MIRROR=${LIMA_MIRROR} LIMA_UBUNTU=${ver} 不支持（可选 tuna|nju × 26.04|24.04；其他地址用 LIMA_IMAGE_URL）" ;;
+    esac
+    dig=${dig:-$pd}; LIMA_IMAGE_DESC="mirror:${LIMA_MIRROR}:${ver}"
+  fi
+  [ -n "$loc" ] || return 0
+  case $dig in ""|sha256:*|sha512:*) ;; *) fail "LIMA_IMAGE_DIGEST 需形如 sha256:<hex>" ;; esac
+  case $loc in *\"*) fail "镜像地址里不能有双引号" ;; esac
+  local dj=""; [ -n "$dig" ] && dj=", \"digest\": \"${dig}\""
+  LIMA_SET=".images = [{\"location\": \"${loc}\", \"arch\": \"aarch64\"${dj}}]"
+}
+
 step_lima() {
   info "Lima 对照：vz + docker 模板"
   need brew
@@ -311,12 +477,21 @@ step_lima() {
     fi
     fail "limactl start 失败（超时 ${lima_timeout}）。${hint}见 ${log}。清理后重试：limactl delete -f ${LIMA_NAME}，然后重新跑 lima 或 all。可用 LIMA_START_TIMEOUT=45m 加长超时。"
   }
+  lima_image_expr
   if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_NAME"; then
     local t0 t1; t0=$(now_ms)
-    limactl start --name="$LIMA_NAME" --vm-type=vz --tty=false --timeout="$lima_timeout" template://docker \
+    local -a set_args=()
+    if [ -n "$LIMA_SET" ]; then set_args=(--set "$LIMA_SET"); info "Lima 镜像：${LIMA_SET}"; fi
+    rec "lima_image=${LIMA_IMAGE_DESC}"
+    limactl start --name="$LIMA_NAME" --vm-type=vz --tty=false --timeout="$lima_timeout" ${set_args[@]+"${set_args[@]}"} template://docker \
       >"$LOG_DIR/lima-start.log" 2>&1 || lima_start_fail
     t1=$(now_ms); rec "lima_cold_start_ms=$((t1-t0))"
   elif ! limactl list "$LIMA_NAME" | grep -q Running; then
+    # 已存在的实例记住的是创建时的镜像地址；没开过机（下载中断）的实例会重新从旧地址下载
+    if [ -n "$LIMA_SET" ] && ! [ -e "$HOME/.lima/$LIMA_NAME/diffdisk" ]; then
+      fail "实例 ${LIMA_NAME} 已存在但从未开机成功（多半是上次镜像下载中断），新镜像变量对它不生效。先 limactl delete -f ${LIMA_NAME}，再重跑 lima。"
+    fi
+    [ -n "$LIMA_SET" ] && info "实例 ${LIMA_NAME} 已有磁盘，忽略 LIMA_IMAGE_*/LIMA_MIRROR，直接启动"
     local t0 t1; t0=$(now_ms)
     limactl start "$LIMA_NAME" --tty=false --timeout="$lima_timeout" >>"$LOG_DIR/lima-start.log" 2>&1 || lima_start_fail
     t1=$(now_ms); rec "lima_restart_ms=$((t1-t0))"
@@ -333,13 +508,16 @@ step_lima() {
 # ---------------------------------------------------------------- cleanup
 cleanup_fastclaw() {
   if [ -f "$POC_HOME/fastclaw.pid" ]; then kill "$(cat "$POC_HOME/fastclaw.pid")" 2>/dev/null || true; sleep 2; fi
+  if [ -f "$POC_HOME/boxlite-shim.pid" ]; then kill "$(cat "$POC_HOME/boxlite-shim.pid")" 2>/dev/null || true; fi
+  rm -f "$POC_HOME/boxlite-shim.pid"
   rm -f "$POC_HOME/fastclaw.pid" "$POC_HOME/fastclaw.backend"
 }
 step_cleanup() {
   info "清理"
   cleanup_fastclaw
+  [ -f "$POC_HOME/boxlite-shim.pid" ] && kill "$(cat "$POC_HOME/boxlite-shim.pid")" 2>/dev/null || true
   [ -f "$POC_HOME/boxlite.pid" ] && kill "$(cat "$POC_HOME/boxlite.pid")" 2>/dev/null || true
-  rm -f "$POC_HOME/boxlite.pid" "$SECRET_FILE"
+  rm -f "$POC_HOME/boxlite.pid" "$POC_HOME/boxlite-shim.pid" "$API_FILE" "$COMPAT_FILE" "$SECRET_FILE"
   if command -v docker >/dev/null && [ -S "$HOME/.lima/$LIMA_NAME/sock/docker.sock" ]; then
     DOCKER_HOST="unix://$HOME/.lima/$LIMA_NAME/sock/docker.sock" docker ps -aq --filter label=fastclaw=sandbox \
       | xargs env DOCKER_HOST="unix://$HOME/.lima/$LIMA_NAME/sock/docker.sock" docker rm -f >/dev/null 2>&1 || true
@@ -360,7 +538,8 @@ step_report() {
     echo "# Heybe 沙箱 PoC 报告"; echo; echo "生成时间：$(date '+%F %T %Z')；FastClaw $FASTCLAW_VERSION"; echo
     echo "## 步骤状态"; echo; echo '| 步骤 | 状态 |'; echo '|---|---|'
     for s in "${ALL_STEPS[@]}"; do echo "| $s | $(cat "$STATUS_DIR/$s" 2>/dev/null || echo 未运行) |"; done; echo
-    echo "## WebSocket 直测"; echo; echo '```'; grep -E '^(handshake|frames_with_marker):' "$LOG_DIR/ws-probe.txt" 2>/dev/null || echo "（未运行）"; echo '```'; echo
+    echo "## BoxLite REST 前缀探测"; echo; echo '```'; cat "$LOG_DIR/boxlite-api-probe.txt" 2>/dev/null || echo "（未运行）"; echo '```'; echo
+    echo "## WebSocket 直测"; echo; echo '```'; grep -E '^(attach_path|handshake|frames_with_marker):' "$LOG_DIR/ws-probe.txt" 2>/dev/null || echo "（未运行）"; echo '```'; echo
     echo "## 回填表（自动）"; echo; python3 - "$RESULTS" "$STATUS_DIR" <<'PY'
 import sys,re,os
 res,sd=sys.argv[1:]
@@ -378,7 +557,10 @@ def r(kind,b,n):
 g=lambda k: m.get(k,"")
 rows=[("macOS / 芯片 / 内存",f"{g('macos')} / {g('arch')} / {g('mem_gb')}GB","同左"),
 ("组件版本",f"boxlite={g('boxlite_version')} / {g('fastclaw_version')}",f"lima_install={g('lima_install')}"),
-("REST /v1/default/boxes",g('boxlite_rest_list_http'),"—"),
+("REST 前缀（探测命中，GET <前缀>/boxes）",f"{g('boxlite_rest_prefix')} → {g('boxlite_rest_list_http') or '—'}（/v1/me prefix={g('boxlite_me_prefix')}）","—"),
+("FastClaw v1.4.0 创建请求体",f"{g('fastclaw_create_compat')}（HTTP {g('fastclaw_create_probe_http')}）","—"),
+("FastClaw 连接参数",f"URL={g('fastclaw_boxlite_url')} PREFIX={g('fastclaw_boxlite_prefix')} 垫片={g('boxlite_shim') or '未启用'}","—"),
+("Lima 镜像","—",g('lima_image')),
 ("验证1 /v1 流式输出",r(0,'boxlite',1),r(0,'docker',1)),
 ("验证2 ~/Documents 不可读",r(0,'boxlite',2),r(0,'docker',2)),
 ("验证3 出网被拦",r(0,'boxlite',3),r(0,'docker',3)),
@@ -398,7 +580,8 @@ PY
       echo "### $s"; echo '```'; tail -n 60 "$LOG_DIR/step-$s.log" 2>/dev/null
       case $s in
         verify-*|fastclaw-*|setup-*) b=${s#*-}; echo "--- fastclaw-$b.log"; tail -n 40 "$LOG_DIR/fastclaw-$b.log" 2>/dev/null ;;
-        serve) echo "--- boxlite-serve.log"; tail -n 40 "$LOG_DIR/boxlite-serve.log" 2>/dev/null ;;
+        serve|ws-probe|fc-compat) echo "--- boxlite-serve.log"; tail -n 40 "$LOG_DIR/boxlite-serve.log" 2>/dev/null
+          echo "--- boxlite-shim.log"; tail -n 20 "$LOG_DIR/boxlite-shim.log" 2>/dev/null ;;
         lima) echo "--- lima-start.log"; tail -n 40 "$LOG_DIR/lima-start.log" 2>/dev/null ;;
       esac; echo '```'; echo
     done
@@ -429,10 +612,10 @@ PY
 }
 
 # ---------------------------------------------------------------- all
-ALL_STEPS=(precheck install serve ws-probe fastclaw-boxlite setup-boxlite verify-boxlite metrics lima fastclaw-docker setup-docker verify-docker)
+ALL_STEPS=(precheck install serve ws-probe fc-compat fastclaw-boxlite setup-boxlite verify-boxlite metrics lima fastclaw-docker setup-docker verify-docker)
 deps_of() { # macOS 自带 bash 3.2 没有关联数组
   case $1 in
-    install|lima) echo precheck ;; serve|metrics) echo install ;; ws-probe|fastclaw-boxlite) echo serve ;;
+    install|lima) echo precheck ;; serve|metrics) echo install ;; ws-probe|fc-compat) echo serve ;; fastclaw-boxlite) echo "serve fc-compat" ;;
     setup-boxlite) echo fastclaw-boxlite ;; verify-boxlite) echo setup-boxlite ;;
     fastclaw-docker) echo "lima install" ;; setup-docker) echo fastclaw-docker ;; verify-docker) echo setup-docker ;;
   esac
@@ -450,11 +633,22 @@ run_one() { # name -> 在子 shell 里跑，记状态，不中断 all
 dispatch() {
   case $1 in
     precheck) step_precheck ;; install) step_install ;; serve) step_serve ;; ws-probe) step_ws_probe ;;
+    api-probe) step_api_probe ;; fc-compat) step_fc_compat ;;
     fastclaw-boxlite) start_fastclaw boxlite ;; setup-boxlite) step_setup boxlite ;; verify-boxlite) step_verify boxlite ;;
     metrics) step_metrics ;; lima) step_lima ;;
     fastclaw-docker) cleanup_fastclaw; start_fastclaw docker ;; setup-docker) step_setup docker ;; verify-docker) step_verify docker ;;
     *) echo "未知步骤 $1" >&2; return 2 ;;
   esac
+}
+run_single() { # 单步命令：照常输出并返回退出码，同时把状态和日志记进报告（否则 report 里还是上次 all 的 SKIP）
+  local s=$1 rc=0
+  set +e
+  ( set -euo pipefail; dispatch "$s" ) > >(tee "$LOG_DIR/step-$s.log") 2>&1
+  rc=$?
+  set -e
+  sleep 0.2
+  if [ "$rc" -eq 0 ]; then echo PASS >"$STATUS_DIR/$s"; else echo FAIL >"$STATUS_DIR/$s"; fi
+  return "$rc"
 }
 step_all() {
   rm -f "$STATUS_DIR"/*; : >"$RESULTS"
@@ -462,16 +656,27 @@ step_all() {
   step_report
   echo "完成（未自动 cleanup；需要时运行 cleanup）。失败/跳过的步骤见 $REPORT"
 }
+# 组合重跑（已装好的不重装；某步失败照常跳过依赖它的步骤；最后生成 report.md）
+RERUN_BOXLITE=(precheck install serve ws-probe fc-compat fastclaw-boxlite setup-boxlite verify-boxlite metrics)
+RERUN_LIMA=(precheck install lima fastclaw-docker setup-docker verify-docker)
+step_rerun() { # 只重置本组步骤的状态，保留其他步骤上次的结果
+  local s; for s in "$@"; do rm -f "$STATUS_DIR/$s"; done
+  for s in "$@"; do
+    case $s in fastclaw-boxlite) cleanup_fastclaw ;; esac
+    run_one "$s"
+  done
+  step_report
+  echo "完成（未自动 cleanup）。失败/跳过的步骤见 $REPORT"
+}
 
 case "${1:-}" in
   all) step_all ;;
-  precheck|install|ws-probe|metrics|lima) dispatch "$1" ;;
-  serve) step_serve; step_ws_probe ;;
-  fastclaw-boxlite|fastclaw-docker) dispatch "$1" ;;
-  setup) step_setup "${2:?backend: boxlite|docker}" ;;
-  verify) step_verify "${2:?backend: boxlite|docker}" ;;
+  rerun-boxlite) step_rerun "${RERUN_BOXLITE[@]}" ;;
+  rerun-lima) step_rerun "${RERUN_LIMA[@]}" ;;
+  precheck|install|serve|api-probe|ws-probe|fc-compat|metrics|lima|fastclaw-boxlite|fastclaw-docker) run_single "$1" ;;
+  setup|verify) case "${2:-}" in boxlite|docker) run_single "$1-$2" ;; *) echo "用法: $0 $1 boxlite|docker" >&2; exit 2 ;; esac ;;
   report) step_report ;;
   cleanup-fastclaw) cleanup_fastclaw; pass "FastClaw 已停止" ;;
   cleanup) step_cleanup ;;
-  *) sed -n 2,11p "$0"; exit 2 ;;
+  *) sed -n 2,20p "$0"; exit 2 ;;
 esac
