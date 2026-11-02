@@ -12,6 +12,8 @@
 #   自动在 127.0.0.1:${BOXLITE_SHIM_PORT:-8101} 起兼容垫片（boxlite-shim.py，只删这个字段）。
 # Lima 镜像（仅新建实例时生效）：LIMA_MIRROR=tuna|nju [LIMA_UBUNTU=26.04|24.04]，或 LIMA_IMAGE_URL=https://…，
 #   或 LIMA_IMAGE_FILE=/abs/path.img（本地文件）；LIMA_IMAGE_DIGEST=sha256:… 可选（预设镜像自带）。
+# 镜像（可选，默认关）：--mirror cn 或 HEYBE_MIRROR=cn → lima 组的 docker pull 先走 HEYBE_DOCKER_MIRROR
+#   （默认 docker.m.daocloud.io）再 docker tag 回原名；不改 daemon 配置。BoxLite 自己拉镜像，不受影响。
 # Agent id：/v1 只认 agt_…，verify 先按名字（HEYBE_POC_AGENT_NAME，默认 poc）经 GET /v1/agents 查 id，
 #   查不到再用 fastclaw agents list、setup 记下的 id；HEYBE_POC_AGENT=agt_… 可手动指定。
 # 密钥：
@@ -42,6 +44,19 @@ BOXLITE_PORT="${BOXLITE_PORT:-8100}"
 BOXLITE_SHIM="${BOXLITE_SHIM:-auto}"                # auto=按 fc-compat 结果决定；1=强制；0=关闭
 BOXLITE_SHIM_PORT="${BOXLITE_SHIM_PORT:-8101}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib-mirror.sh
+. "$SCRIPT_DIR/../lib-mirror.sh"
+_ARGS=(); _MIRROR="${HEYBE_MIRROR:-}"   # --mirror 可写在任意位置，其余参数照旧是 <step> [backend]
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --mirror) [ $# -ge 2 ] || { echo "--mirror 后面要写 cn 或 off" >&2; exit 2; }; _MIRROR="$2"; shift ;;
+    --mirror=*) _MIRROR="${1#--mirror=}" ;;
+    *) _ARGS+=("$1") ;;
+  esac
+  shift
+done
+set -- ${_ARGS[@]+"${_ARGS[@]}"}
+heybe_mirror_setup "$_MIRROR" || exit 2
 API_FILE="$POC_HOME/boxlite.api"                    # 探测到的 REST 前缀，如 /v1
 COMPAT_FILE="$POC_HOME/boxlite.fc-compat"           # ok | reject_auto_remove
 FASTCLAW_PORT="${FASTCLAW_PORT:-18953}"
@@ -524,7 +539,11 @@ step_lima() {
   fi
   export DOCKER_HOST="unix://${HOME}/.lima/${LIMA_NAME}/sock/docker.sock"
   docker info >/dev/null 2>&1 || fail "docker info 失败（DOCKER_HOST=${DOCKER_HOST}；排查：limactl list; ls ~/.lima/${LIMA_NAME}/sock）"
-  docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1 || docker pull "$SANDBOX_IMAGE" >"$LOG_DIR/docker-pull.log" 2>&1 || fail "拉取 ${SANDBOX_IMAGE} 失败"
+  [ -n "$HEYBE_DOCKER_MIRROR" ] && info "$(heybe_mirror_summary)"
+  if ! heybe_docker_pull "$SANDBOX_IMAGE" >"$LOG_DIR/docker-pull.log" 2>&1; then
+    heybe_docker_mirror_hint
+    fail "拉取 ${SANDBOX_IMAGE} 失败（见 ${LOG_DIR}/docker-pull.log；国内网络可加 --mirror cn 或 HEYBE_DOCKER_MIRROR=<前缀>）"
+  fi
   local w0 w1; w0=$(now_ms); docker run --rm "$SANDBOX_IMAGE" true; w1=$(now_ms); rec "lima_warm_container_ms=$((w1-w0))"
   rec "lima_disk=$(dsz "$HOME/.lima/$LIMA_NAME") lima_install=$(dsz -L "$(brew --prefix lima)")"
   rec "lima_vm_rss_mb=$(ps -axo rss,command | awk '/limactl|vz|Virtualization/ {s+=$1} END {print int(s/1024)}')"

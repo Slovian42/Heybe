@@ -3,7 +3,9 @@
 # 用法：
 #   scripts/dev/heybe-desktop-dev.sh          预检 → （首次）跑 t021 准备 FastClaw+DeepSeek → pnpm install → tauri dev
 #   scripts/dev/heybe-desktop-dev.sh check    退出 Heybe 后检查：没有残留的 fastclaw / 本地服务进程
-#   --yes    better-sqlite3 与当前 node 不匹配时直接 pnpm rebuild，不先问
+#   --yes          better-sqlite3 与当前 node 不匹配时直接 pnpm rebuild，不先问
+#   --mirror cn    本次编译 Rust 时 crates.io 走国内镜像（默认 rsproxy.cn，HEYBE_CARGO_MIRROR 可改）；
+#                  也可写 HEYBE_MIRROR=cn。只给这次的 cargo 传 --config，不改 ~/.cargo/config（scripts/lib-mirror.sh）
 # Node：仓库固定 Node 22（.nvmrc）。启动前会实际加载一次 better-sqlite3，不匹配（NODE_MODULE_VERSION）时
 #   提示切换 Node 或重建（scripts/dev/lib-node-check.sh）。
 # 密钥：只从 600 文件读进环境变量，不打印、不落别的盘。窗口里的服务地址和令牌由 Tauri 每次随机生成。
@@ -12,15 +14,21 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=lib-node-check.sh
 . "$REPO_ROOT/scripts/dev/lib-node-check.sh"
-CMD="" YES=0
-for a in "$@"; do
-  case "$a" in
+# shellcheck source=../lib-mirror.sh
+. "$REPO_ROOT/scripts/lib-mirror.sh"
+CMD="" YES=0 MIRROR="${HEYBE_MIRROR:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
     check) CMD=check ;;
     --yes|-y) YES=1 ;;
+    --mirror) [ $# -ge 2 ] || { echo "--mirror 后面要写 cn 或 off" >&2; exit 2; }; MIRROR="$2"; shift ;;
+    --mirror=*) MIRROR="${1#--mirror=}" ;;
     -h|--help) awk 'NR > 1 && /^set -euo/ { exit } NR > 1' "$0"; exit 0 ;;
-    *) echo "未知参数：$a（--help 查看用法）" >&2; exit 2 ;;
+    *) echo "未知参数：${1}（--help 查看用法）" >&2; exit 2 ;;
   esac
+  shift
 done
+heybe_mirror_setup "$MIRROR" || exit 2
 T021_HOME="${HEYBE_T021_HOME:-$HOME/.local/opt/heybe-t021}"
 FC_HOME="${T021_HOME}/fastclaw-home"
 FC_BIN="${HEYBE_FASTCLAW_BIN:-$HOME/.local/opt/fastclaw/bin/fastclaw}"
@@ -74,5 +82,8 @@ export HEYBE_FASTCLAW_BASE_URL="http://127.0.0.1:${PORT}"
 HEYBE_FASTCLAW_CHAT_TOKEN="$(cat "$KEY_FILE")"; export HEYBE_FASTCLAW_CHAT_TOKEN
 
 echo "== 启动 Heybe（首次编译 Rust 要几分钟；关窗=隐藏，Cmd+Q=退出）"
+ok "$(heybe_mirror_summary)"
 cd "$REPO_ROOT/apps/desktop"
+# tauri dev -- <参数> 原样传给 cargo run；没配镜像时不传任何参数
+if [ -n "$HEYBE_CARGO_MIRROR" ]; then exec pnpm tauri dev -- "${HEYBE_CARGO_ARGS[@]}"; fi
 exec pnpm tauri dev

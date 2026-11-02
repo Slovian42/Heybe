@@ -34,6 +34,7 @@ Tauri 壳（src-tauri/src/service.rs，Supervisor）
 - 开发版命令：debug 构建用 `pnpm -C services/task-manager start`（tsx）；可用 `HEYBE_SERVICE_CMD` 覆盖。发布版打包成 sidecar 留给 19-h。
 - 一键开发脚本：`scripts/dev/heybe-desktop-dev.sh`（预检 → 首次自动跑 `scripts/poc/t021-mac.sh` 准备 FastClaw + DeepSeek → `pnpm install` → Node/better-sqlite3 检查 → `pnpm tauri dev`）；`… check` 检查残留进程。
 - Node 版本：仓库固定 Node 22（`.nvmrc`）。better-sqlite3 是原生模块，按安装时的 Node 编译；换了 Node（例如 Mac 默认变成 v26）会报 `NODE_MODULE_VERSION` 不一致、本地服务起不来。脚本在启动前实际加载一次，不匹配时用中文说明原因，并提示 `nvm use` / `fnm use` 或 `pnpm -r rebuild better-sqlite3`；交互终端会先问，加 `--yes` 直接重建。`providers-mac-check.sh` 同样检查。
+- 国内镜像（可选，默认关）：`scripts/dev/heybe-desktop-dev.sh --mirror cn`（或 `HEYBE_MIRROR=cn`）让这次编译的 crates.io 走 `sparse+https://rsproxy.cn/index/`，`HEYBE_CARGO_MIRROR=<索引地址>` 可换成别的镜像。实现是给这次的 `cargo run` 传 `--config source.crates-io.replace-with=…`（经 `pnpm tauri dev -- <参数>`），并在本进程设 `CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse`，**不改 `~/.cargo/config.toml`**，也不需要在仓库里放 `.cargo/config.toml`（之前手工放的可以删掉）。见 `scripts/lib-mirror.sh`，测试 `scripts/mirror-mock-test.sh`。
 
 - 图标：`apps/desktop/src-tauri/icons/` 目前是**占位图标**（纯色底 + H，RGBA），正式图标由品牌方提供后覆盖同名文件（见该目录 `README.md`）。缺图标时 `generate_context!` 编译期 panic，`apps/desktop/test/icons.test.ts` 检查 `tauri.conf.json` 引用的图标都在。
 

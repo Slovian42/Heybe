@@ -78,6 +78,15 @@ verify 曾把 `agents init` 的名字 `poc` 直接当 `model` / `agent_id` / `x-
 
 名字默认 `poc`，可用 `HEYBE_POC_AGENT_NAME` 改；`HEYBE_POC_AGENT` 写成不带 `agt_` 的值时按名字处理（兼容旧用法）。报告里会记一行 `[<backend>] agent_id=agt_…`。干跑测试：`scripts/poc/fc-agent-mock-test.sh`、`scripts/poc/t032-mock-test.sh`（假 FastClaw 收到名字会回 404）。
 
+## 1.3 国内镜像（可选，默认关闭）
+
+`--mirror cn`（可写在任意位置，如 `scripts/poc/boxlite-poc.sh rerun-lima --mirror cn`）或 `HEYBE_MIRROR=cn`：
+
+- Docker：lima 组拉 `thinkany/fastclaw-sandbox` 时先拉 `${HEYBE_DOCKER_MIRROR}/thinkany/fastclaw-sandbox:latest`（cn 默认前缀 `docker.m.daocloud.io`），再 `docker tag` 回原名，失败自动回退直接拉。**不改 Docker daemon 配置**；拉取失败时只打印 `registry-mirrors` 的手动设置方法。
+- BoxLite 由 `boxlite serve` 自己拉镜像，不受这个开关影响。
+- Cargo（桌面端编译）：见 `docs/t19-desktop-chat.md`，同样只作用于本次运行，不改 `~/.cargo/config.toml`。
+- 地址都可覆盖：`HEYBE_DOCKER_MIRROR=<前缀>`、`HEYBE_CARGO_MIRROR=<索引>`；`--mirror off` 关掉。实现 `scripts/lib-mirror.sh`，测试 `scripts/mirror-mock-test.sh`。
+
 ## 2. 密钥处理
 
 | 密钥 | 来源 | 存放 | 不会出现在 |
