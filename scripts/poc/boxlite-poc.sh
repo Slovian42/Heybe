@@ -38,6 +38,8 @@ POC_ENV="${HEYBE_POC_ENV:-$HOME/.heybe-poc.env}"
 . "$(cd "$(dirname "$0")" && pwd)/lib-fc-env.sh"
 # shellcheck source=lib-fc-agent.sh
 . "$(cd "$(dirname "$0")" && pwd)/lib-fc-agent.sh"
+# shellcheck source=lib-net-verify.sh
+. "$(cd "$(dirname "$0")" && pwd)/lib-net-verify.sh"
 BOXLITE_DIR="$HOME/.local/opt/boxlite/bin"
 FASTCLAW_DIR="$HOME/.local/opt/fastclaw/bin"
 LOG_DIR="$POC_HOME/logs"
@@ -495,7 +497,7 @@ print("".join(out))
 PY
 }
 
-# 三项验证分别记录；任何一项失败，整体返回失败，但三项都会跑完
+# 各项验证分别记录（boxlite 4 项，docker 3 项）；任何一项失败，整体返回失败，但都会跑完
 step_verify() { # backend
   local b=$1 log="$LOG_DIR/fastclaw-$1.log" out t0 t1 bad=0
   [ "$(cat "$POC_HOME/fastclaw.backend" 2>/dev/null)" = "$b" ] || fail "[${b}] 当前运行的 FastClaw 不是 ${b} 后端"
@@ -516,11 +518,24 @@ step_verify() { # backend
     echo "$out" >"$LOG_DIR/verify2-$b.txt"
     ! grep -q "$token" <<<"$out" || fail "[${b}] 验证2 沙箱读到了宿主文件！"
     pass "[${b}] 验证2 宿主 ~/Documents 不可见" ) || bad=1
-  ( info "[${b}] 验证 3：非白名单出网应失败"
-    out=$(chat "$b" "Use the exec tool to run: curl -sS -m 8 -o /dev/null -w 'HTTP_%{http_code}' https://example.com || echo NET_BLOCKED . Reply with raw output.") || fail "[${b}] /v1 调用失败"
+  ( info "[${b}] 验证 3：沙箱出网应全部失败（外网、宿主机 8100 / 11434、DNS），见 lib-net-verify.sh"
+    local why
+    out=$(chat "$b" "Use the exec tool to run exactly this shell command: $NET_PROBE_CMD . Reply with the raw tool output only.") || fail "[${b}] /v1 调用失败"
     echo "$out" >"$LOG_DIR/verify3-$b.txt"
-    ! grep -q 'HTTP_200\|HTTP_30' <<<"$out" || fail "[${b}] 验证3 出网未被拦截（boxlite：FastClaw 创建 box 不带 allow_net；docker：sandbox.network 可能未作用于系统池）"
-    pass "[${b}] 验证3 出网被拦截" ) || bad=1
+    why=$(net_verdict "$out") || fail "[${b}] 验证3 ${why}（原始输出 ${LOG_DIR}/verify3-${b}.txt；boxlite：代理应强制 outbound=disabled；docker：sandbox.network 是 agent 作用域，系统池不读）"
+    rec "[$b] sandbox_net=all_blocked"
+    pass "[${b}] 验证3 ${why}" ) || bad=1
+  if [ "$b" = boxlite ]; then
+    ( info "[${b}] 验证 4：不带 key 访问 serve / 代理应 401"
+      local nc pc
+      load_api_base
+      nc=$(serve_noauth_code)
+      pc=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${BOXLITE_PROXY_PORT}${API_BASE}/boxes" 2>/dev/null) || true
+      rec "[$b] serve_noauth_http=${nc} proxy_noauth_http=${pc:-000}"
+      [ "$nc" = 401 ] || fail "[${b}] 验证4 不带 key 访问 127.0.0.1:${BOXLITE_PORT}/v1/boxes 返回 ${nc}（应为 401）"
+      [ "${pc:-000}" = 401 ] || fail "[${b}] 验证4 不带 key 访问代理 127.0.0.1:${BOXLITE_PROXY_PORT} 返回 ${pc:-000}（应为 401）"
+      pass "[${b}] 验证4 serve(${BOXLITE_PORT}) 与代理(${BOXLITE_PROXY_PORT}) 不带 key 都是 401" ) || bad=1
+  fi
   [ $bad = 0 ] || fail "[${b}] verify 有失败项"
 }
 

@@ -44,7 +44,7 @@
 第 1 项由 `boxlite-poc.sh verify boxlite` 验证2 覆盖；其余 4 项由 `scripts/poc/t032-runtime-checks.sh` 在 BoxLite 强制沙箱下实测（先跑 `boxlite-poc.sh rerun-boxlite`），结果写 `~/.local/opt/heybe-poc/t032-report.md` 并并入 `report.md`。干跑测试：`scripts/poc/t032-mock-test.sh`。
 
 - [ ] 强制模式 + BoxLite：`exec` 写的文件不出现在宿主机、`exec` 不能访问宿主机 `~`
-- [ ] 文件工具写 `~/Documents/heybe-probe.txt`：预期**落到宿主机**（验证 B1）
-- [ ] 沙箱镜像内有无 `camoufox-cli`
+- [ ] 文件工具写 `~/Documents/heybe-t032-<随机>.txt`（验证 B1），分三项：C1a `write_file` 新建、C1b `edit_file` 改脚本先建好的新文件、C1c `apply_patch` 新建。源码静态结论（v1.4.0）：前两个本地部署下对 `~/Documents`、`/Users/…` 走宿主机（`route.go` `RouteHostFS`，B1 成立）；沙箱版 `apply_patch` 只写沙箱/工作区（`apply_patch.go` `writeForPatchSandbox`），预期“未落宿主机”。开 `FASTCLAW_DEPLOY=hosted` 后三项都应是“未落宿主机”（见 `b1-file-tools.md`）
+- [ ] 沙箱镜像内有无 `camoufox-cli`（v1 已关该技能，见第 4 行；二进制在不在只影响断网失效时的风险）
 - [ ] `delegate_task` 子 Agent 的命令在父沙箱内
-- [ ] 不设 `FASTCLAW_ALLOW_HOST_EXEC` 时工具列表里没有 `host_exec`
+- [ ] 不设 `FASTCLAW_ALLOW_HOST_EXEC` 时工具列表里没有 `host_exec`；另记 C4b：工具列表里有哪些能写文件的工具（`write_file`/`edit_file`/`apply_patch`）

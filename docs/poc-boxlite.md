@@ -118,15 +118,16 @@ scripts/poc/boxlite-poc.sh fastclaw-docker  && scripts/poc/boxlite-poc.sh setup 
 scripts/poc/boxlite-poc.sh report
 ```
 
-三项验证判定：
+验证判定（boxlite 4 项，docker 前 3 项）：
 
 | # | 做法 | PASS 条件 |
 |---|---|---|
 | 1 流式输出 | `ws-probe` 直连 `…/attach` 做 WebSocket 握手；`verify` 让 Agent 执行 `echo HEYBE_EXEC_$((40+2)) && uname -a` | 握手 101 且 3/3 标记帧；回复含 `HEYBE_EXEC_42`、uname 为 Linux；日志无 attach 错误 |
 | 2 宿主隔离 | 在 `~/Documents/heybe-poc-secret.txt` 写随机标记，让 Agent `cat` | 回复中没有该标记 |
-| 3 出网拦截 | 让 Agent `curl https://example.com` | 不是 200/30x |
+| 3 出网拦截 | 让 Agent 跑 `scripts/poc/lib-net-verify.sh` 的 `NET_PROBE_CMD`：`curl https://example.com`、`curl http://host.boxlite.internal:8100/v1/config`（宿主 BoxLite serve）、`curl http://192.168.127.254:11434/`（宿主回环服务经 BoxLite 网关）、`getent hosts example.com`/`nslookup`（DNS） | 回复里 `CURL=yes`，且 `EXT`、`HOST8100`、`HOST11434`、`DNS` **都明确是 `NET_BLOCKED`**；有一项 `OPEN`/`RESOLVED` 或缺标记（模型没执行、镜像没 curl）都算 FAIL，不再只看“不是 200/30x” |
+| 4 api-key（仅 boxlite） | 宿主上不带 key 访问 `127.0.0.1:8100/v1/boxes` 和代理 `127.0.0.1:<代理端口>/v1/boxes` | 两个都是 401 |
 
-> 预期：BoxLite 的验证 3 在 v1.4.0 上很可能 FAIL（见第 3 节）。这本身就是要记录的结论。
+> 2026-11-02 Mac 实测：修复前 BoxLite 验证 3 FAIL（FastClaw 建箱不带网络设置，BoxLite 默认全出网，沙箱还能连宿主 `host.boxlite.internal`）。现在一律经代理强制 `outbound=disabled`，需在 Mac 上复验。判定逻辑干跑测试：`scripts/poc/net-verify-mock-test.sh`。docker 组验证 3 预期仍 FAIL（`sandbox.network` 是 agent 作用域，系统池不读；Lima/docker 只作对照）。
 
 ## 5. 清理（手动执行，`all` 不会自动做）
 
@@ -149,7 +150,7 @@ rm ~/.heybe-poc.env                           # 用完删除密钥文件
 | 组件版本 | | |
 | REST `/v1/default/boxes` | | — |
 | WS 握手 / 标记帧 | | — |
-| 验证1 / 2 / 3 | | |
+| 验证1 / 2 / 3 / 4 | | |
 | 冷启动 / 热启动 ms | | |
 | 首轮对话 ms | | |
 | 安装 / 数据体积 | | |

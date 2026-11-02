@@ -12,8 +12,8 @@ echo keep >"$HOME/Documents/user-file.txt"
 echo boxlite >"$HEYBE_POC_HOME/fastclaw.backend"
 PORT=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')
 export FASTCLAW_PORT=$PORT
-python3 - "$PORT" <<'PY' &
-import sys,json,re,http.server
+python3 - "$PORT" "$T/hosted" <<'PY' &
+import sys,os,json,re,http.server
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self,*a): pass
     def js(self,code,obj):
@@ -32,14 +32,22 @@ class H(http.server.BaseHTTPRequestHandler):
             return self.js(404,{"error":{"code":"agent_not_found","message":"agent not found"}})
         p=j["messages"][0]["content"]
         ev=[]
-        if "write_file" in p:
-            m=re.search(r"path '([^']+)' with exactly this content: (\S+)",p); open(m.group(1),"w").write(m.group(2)+"\n")
+        hosted=os.path.exists(sys.argv[2])   # 模拟 FASTCLAW_DEPLOY=hosted：文件工具都不碰宿主机
+        if "apply_patch" in p:   # 沙箱版 apply_patch 只写沙箱（与源码一致），两种模式都不碰宿主机
+            ev=[{"tool":{"id":"1","name":"apply_patch","status":"done"}}]; txt="DONE"
+        elif "edit_file" in p:
+            m=re.search(r"path '([^']+)': replace the text (\S+) with (\S+) ",p)
+            if not hosted: c=open(m.group(1)).read(); open(m.group(1),"w").write(c.replace(m.group(2),m.group(3)))
+            ev=[{"tool":{"id":"1","name":"edit_file","status":"done"}}]; txt="DONE"
+        elif "write_file" in p:
+            m=re.search(r"path '([^']+)' with exactly this content: (\S+)",p)
+            if not hosted: open(m.group(1),"w").write(m.group(2)+"\n")
             ev=[{"tool":{"id":"1","name":"write_file","status":"done"}}]; txt="DONE"
         elif "CAMOUFOX" in p: ev=[{"tool":{"id":"2","name":"exec","status":"done"}}]; txt="OS=Linux\nCAMOUFOX=no"
         elif "delegate_task" in p:
             ev=[{"tool":{"id":"3","name":"exec","status":"done"}},{"tool":{"id":"4","name":"delegate_task","status":"done"}}]
             txt="PARENT BOOT=aaaa-1111 HN=box1\nCHILD BOOT=aaaa-1111 HN=box1"
-        else: txt="TOOLS: exec, read_file, write_file, web_fetch, delegate_task"
+        else: txt="TOOLS: exec, read_file, write_file, edit_file, apply_patch, web_fetch, delegate_task"
         self.send_response(200); self.send_header("Content-Type","text/event-stream"); self.end_headers()
         for e in ev+[{"choices":[{"delta":{"content":txt}}]},{"choices":[{"delta":{},"finish_reason":"stop"}]}]:
             self.wfile.write(b"data: "+json.dumps(e).encode()+b"\n\n")
@@ -53,10 +61,25 @@ echo "$out"
 echo "$out" | grep -q '/v1 使用 Agent id agt_mock123' || { echo "ASSERT FAIL: 没按名字 poc 查到 agt_mock123" >&2; exit 1; }
 R="$HEYBE_POC_HOME/t032-report.md"
 ok() { grep -q "$1" "$R" || { echo "ASSERT FAIL: $1" >&2; exit 1; }; }
-ok '| C1 文件工具写 ~/Documents（B1） | B1 成立 |.*已删除临时文件'
+ok '| C1a write_file 写 ~/Documents（B1） | B1 成立 |.*已删除临时文件'
+ok '| C1b edit_file 改 ~/Documents（B1） | B1 成立 |.*已删除临时文件'
+ok '| C1c apply_patch 写 ~/Documents（B1） | 未落宿主机 |'
 ok '| C2 沙箱镜像内 camoufox-cli | 无 |'
 ok '| C3 delegate_task 子 Agent 沙箱 | 同一沙箱 |'
 ok '| C4 host_exec 未注册 | PASS |'
-[ "$(ls "$HOME/Documents")" = user-file.txt ] || { echo "ASSERT FAIL: ~/Documents 有残留或用户文件被动" >&2; exit 1; }
-! grep -q mock-key "$R" "$HEYBE_POC_HOME"/logs/* || { echo "ASSERT FAIL: 报告/日志含密钥" >&2; exit 1; }
+ok '| C4b 能写文件的工具 | 有：write_file,edit_file,apply_patch |'
+clean() {
+  [ "$(ls "$HOME/Documents")" = user-file.txt ] || { echo "ASSERT FAIL: ~/Documents 有残留或用户文件被动" >&2; exit 1; }
+  [ "$(cat "$HOME/Documents/user-file.txt")" = keep ] || { echo "ASSERT FAIL: 用户文件内容被改" >&2; exit 1; }
+  ! grep -q mock-key "$R" "$HEYBE_POC_HOME"/logs/* || { echo "ASSERT FAIL: 报告/日志含密钥" >&2; exit 1; }
+}
+clean
+
+# 第二轮：模拟 FASTCLAW_DEPLOY=hosted（文件工具不碰宿主机），三个 C1 子项都应是“未落宿主机”，临时文件都清掉
+: >"$T/hosted"
+"$SCRIPT_DIR/t032-runtime-checks.sh" >/dev/null
+ok '| C1a write_file 写 ~/Documents（B1） | 未落宿主机 |'
+ok '| C1b edit_file 改 ~/Documents（B1） | 未落宿主机 |.*已删除临时文件'
+ok '| C1c apply_patch 写 ~/Documents（B1） | 未落宿主机 |'
+clean
 echo "t032 mock test: PASS"
