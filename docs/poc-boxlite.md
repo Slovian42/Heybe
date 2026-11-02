@@ -141,6 +141,8 @@ brew uninstall lima docker                    # 可选
 rm ~/.heybe-poc.env                           # 用完删除密钥文件
 ```
 
+不带 `PURGE=1` 的 cleanup 会保留 FastClaw 数据目录和 Agent `poc`。之后再跑 `setup`，脚本先用 `fastclaw agents list` 查出它的 `agt_…` id，带 `--id` 原地更新（不新建、不重新生成管理员密码）；查不到但 `init` 报 `already exists (id agt_…)` 时，用报错里的 id 再带 `--id` 跑一次。更新后重新关闭 camoufox-cli 并读回 `false`。干跑测试：`scripts/poc/boxlite-setup-mock-test.sh`。
+
 ## 6. 结果回填表
 
 `report.md` 会自动填写下表；空格或「未运行」项需要人工补充。

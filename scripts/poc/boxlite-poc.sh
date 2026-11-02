@@ -93,7 +93,7 @@ now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
 home_for() { echo "$POC_HOME/$1"; }               # 每个后端独立的 FASTCLAW_HOME
 apikey_file() { echo "$POC_HOME/$1/fastclaw-apikey"; }
 agent_id_file() { echo "$POC_HOME/$1/agent-id"; }   # setup 时从 agents init 输出记下的 id（查找的最后一级兜底）
-file_mode() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }   # macOS / Linux
+file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }   # Linux / macOS（Linux 上 stat -f 是文件系统信息，必须先试 -c）
 
 wait_http() { local _i; for _i in $(seq 1 "$2"); do curl -sS -o /dev/null -m 2 "$1" 2>/dev/null && return 0; sleep 1; done; return 1; }
 
@@ -423,14 +423,13 @@ start_fastclaw() { # backend
 #   技能目录里不再列出它（mock LLM 抓系统提示核对过）。镜像里的二进制仍在、系统提示固定段仍提到它，
 #   真正的约束是沙箱出网关闭（proxy 强制 network.mode=disabled）。产品侧同样的 CLI 调用是已批准的第二个例外（Yang 2026-11-02，
 #   architecture.md §3.10），实现在 services/task-manager/src/fastclaw-skills.ts（每次启动都查）。
-CAMOUFOX_KEY=skills.entries.camoufox-cli.enabled
-camoufox_off() { # backend（fc_env 已导出）
-  fastclaw agents config "$AGENT_NAME" set "$CAMOUFOX_KEY" false >/dev/null 2>&1 \
-    || fail "[${1}] 设置 ${CAMOUFOX_KEY}=false 失败"
-  local v; v=$(fastclaw agents config "$AGENT_NAME" get "$CAMOUFOX_KEY" 2>/dev/null | tr -d '[:space:]') || v=""
-  [ "$v" = false ] || fail "[${1}] ${CAMOUFOX_KEY} 读回是 ${v:-空}，不是 false"
+camoufox_off() { # backend agent（fc_env 已导出；agent 用 agt_ id，没有就用名字）
+  local v rc=0
+  v=$(fc_camoufox_off fastclaw "$2") || rc=$?
+  [ "$rc" != 1 ] || fail "[${1}] 设置 ${FC_CAMOUFOX_KEY}=false 失败（agent ${2}）"
+  [ "$rc" = 0 ] || fail "[${1}] ${FC_CAMOUFOX_KEY} 读回是 ${v}，不是 false（agent ${2}）"
   rec "[$1] camoufox_skill_enabled=false"
-  pass "[${1}] camoufox-cli 技能已关闭（读回 ${CAMOUFOX_KEY}=false）"
+  pass "[${1}] camoufox-cli 技能已关闭（读回 ${FC_CAMOUFOX_KEY}=false，agent ${2}）"
 }
 
 # 配置 Agent（CLI，不走 /api/*）+ 生成 apikey（只写 600 文件）
@@ -440,22 +439,27 @@ step_setup() { # backend
   info "[${backend}] agents init（DeepSeek，CLI：FC:cmd/fastclaw/cmd_agents.go）"
   # --api-key-env：init 读出变量值写进数据库（FC:internal/agentcli/agentcli.go:550–558），gateway 运行时不需要它。
   # init 会在没有用户时创建 super_admin "admin" 并打印生成的密码：输出只留内存，不落盘
-  local init_out init_rc=0
-  init_out=$(fc_env_exec DEEPSEEK_API_KEY fastclaw agents init "$AGENT_NAME" --provider deepseek --model "$MODEL" --api-key-env DEEPSEEK_API_KEY 2>&1) || init_rc=$?
-  local init_id; init_id=$(fc_agent_id_from_init "$init_out")
-  # shellcheck disable=SC2034  # 有意清空：init 输出可能含管理员密码
-  init_out=""
-  if [ -n "$init_id" ]; then ( umask 077; printf '%s\n' "$init_id" >"$(agent_id_file "$backend")" ); fi
+  # 已有同名 Agent（不带 PURGE 的 cleanup 会留下数据目录和旧的 poc）→ 查出 agt_ id，带 --id 原地更新（lib-fc-agent.sh，同 #88）
+  local up up_rc=0 verb init_id
+  up=$(fc_agent_init_upsert fastclaw "$AGENT_NAME" DEEPSEEK_API_KEY --provider deepseek --model "$MODEL" --api-key-env DEEPSEEK_API_KEY) || up_rc=$?
   fc_lock_home "$home"
-  [ "$init_rc" = 0 ] || fail "[${backend}] agents init 失败（退出码 ${init_rc}；手动重跑看原因）"
-  pass "[${backend}] Agent ${AGENT_NAME} 已配置 provider=deepseek model=${MODEL}${init_id:+（id ${init_id}）}"
+  [ "$up_rc" = 0 ] || fail "[${backend}] agents init 失败（退出码 ${up_rc}；见上面的 Error 行）"
+  verb=${up%% *}; init_id=${up#* }; [ "$init_id" != unknown ] || init_id=""
+  if [ -n "$init_id" ]; then ( umask 077; printf '%s\n' "$init_id" >"$(agent_id_file "$backend")" ); fi
+  if [ "$verb" = updated ]; then
+    rec "[$backend] agent_init=updated_in_place agent_id=${init_id}"
+    pass "[${backend}] Agent ${AGENT_NAME} 已存在，已用 --id ${init_id} 原地更新 provider=deepseek model=${MODEL}"
+  else
+    rec "[$backend] agent_init=created agent_id=${init_id}"
+    pass "[${backend}] Agent ${AGENT_NAME} 已新建 provider=deepseek model=${MODEL}${init_id:+（id ${init_id}）}"
+  fi
   if [ "$backend" = docker ]; then
     # 沙箱网络：agent 作用域 setting（FC:internal/agentcli/agentcli.go settingKey，sandbox.* 为 agent scope）
     fastclaw agents config "$AGENT_NAME" set sandbox.network none >/dev/null 2>&1 \
       || fail "[${backend}] 设置 sandbox.network=none 失败"
     pass "[${backend}] sandbox.network=none 已写入 Agent 配置（是否作用于系统沙箱池待核实，见验证 3）"
   fi
-  camoufox_off "$backend"
+  camoufox_off "$backend" "${init_id:-$AGENT_NAME}"
   fastclaw agents doctor "$AGENT_NAME" >"$LOG_DIR/doctor-$backend.txt" 2>&1 || fail "[${backend}] agents doctor 未通过（见 ${LOG_DIR}/doctor-${backend}.txt）"
   pass "[${backend}] agents doctor 通过"
 
