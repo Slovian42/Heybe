@@ -4,9 +4,25 @@ import { spawn, type ChildProcess } from "node:child_process";
 
 import { buildChildEnv } from "./child-env.js";
 
+/**
+ * Args for the FastClaw child. Always the explicit foreground `gateway` subcommand, never a
+ * bare `fastclaw`: in FastClaw v1.4.0 the root command (cmd/fastclaw/main.go RunE) checks
+ * `isInteractiveTerminal(os.Stdin, os.Stdout)` (cmd_chat.go), which only tests
+ * os.ModeCharDevice — and /dev/null (our "ignore" stdio) IS a character device. So a bare
+ * `fastclaw` took the chat path: `daemon.Start` (a detached background gateway that outlives
+ * us), then the bubbletea TUI, which needs /dev/tty and dies with "could not open a new TTY"
+ * when there is no controlling terminal (Dock / Finder launch, setsid). `gateway --port N`
+ * (gatewayCmd -> runGateway) runs in the foreground with no TTY or daemon involved.
+ */
+export function gatewayArgs(port: number): string[] {
+  return ["gateway", "--port", String(port)];
+}
+
 export interface GatewayOptions {
   /** Path to the `fastclaw` binary (HEYBE_FASTCLAW_GATEWAY_BIN). */
   bin: string;
+  /** Port the gateway listens on (also passed as FASTCLAW_PORT in env). */
+  port: number;
   /** Health URL, e.g. http://127.0.0.1:18963/healthz. */
   healthUrl: string;
   env?: Record<string, string | undefined>;
@@ -26,7 +42,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function startGateway(opts: GatewayOptions): Promise<GatewayHandle> {
   // Whitelisted env only: no model/provider keys, no HEYBE_* tokens (child-env.ts rules).
   const { env } = buildChildEnv(opts.env ?? process.env);
-  const child = spawn(opts.bin, [], { env, stdio: ["ignore", "ignore", "inherit"] });
+  const child = spawn(opts.bin, gatewayArgs(opts.port), { env, stdio: ["ignore", "ignore", "inherit"] });
   let done = false;
   const exited = new Promise<number | null>((resolve) => {
     child.once("exit", (code) => {

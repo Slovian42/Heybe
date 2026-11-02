@@ -56,8 +56,11 @@ export async function startHeybeService(
   const bin = env.HEYBE_FASTCLAW_GATEWAY_BIN?.trim();
   if (bin) {
     const fcPort = env.FASTCLAW_PORT?.trim() || "18953";
+    const portNum = Number(fcPort);
+    if (!Number.isInteger(portNum) || portNum <= 0 || portNum > 65535) throw new Error("FASTCLAW_PORT invalid");
     gateway = await (deps.startGateway ?? startGateway)({
       bin,
+      port: portNum,
       env,
       healthUrl: `http://127.0.0.1:${fcPort}/healthz`,
     });

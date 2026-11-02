@@ -16,7 +16,7 @@
 | FastClaw 请求路径 = `URL + /{prefix}/boxes…`，exec 结果走 `GET …/executions/{id}/attach` WebSocket | `FC:internal/sandbox/boxlite_executor.go`（`prefixPath`、`attachWebsocketURL`） |
 | 创建 box 只发 `{"image","auto_remove":true}`，**不带 allow_net、不挂载宿主目录**；默认镜像 `thinkany/fastclaw-sandbox:latest` | `FC:internal/sandbox/boxlite_executor.go`（`createBox`、常量） |
 | `FASTCLAW_SANDBOX_ENABLED`/`_ENFORCE`/`_BACKEND`；设置 BACKEND 会隐含 ENABLED | `FC:internal/config/env.go:120-127`；`FC:internal/buildinfo/buildinfo.go` |
-| gateway 默认端口 18953（`FASTCLAW_PORT`），`fastclaw` 无子命令即启动 gateway | `FC:internal/config/env.go:34`；`FC:cmd/fastclaw/main.go:127` |
+| gateway 默认端口 18953（`FASTCLAW_PORT`）。**一律用 `fastclaw gateway --port N` 前台启动**：无子命令的 `fastclaw` 只有在 stdin/stdout 都不是字符设备时才起 gateway，否则进聊天 TUI（先 `daemon.Start` 拉起后台 daemon，再打开 `/dev/tty`）；`/dev/null` 也算字符设备，所以无 TTY 时会报 `could not open a new TTY` | `FC:internal/config/env.go:34`；`FC:cmd/fastclaw/main.go`（root `RunE`、`gatewayCmd`）；`FC:cmd/fastclaw/cmd_chat.go`（`isInteractiveTerminal`、`runChat`、`ensureGateway`） |
 | `/v1/chat/completions` 选 Agent：body `agent_id` 或 header `x-fastclaw-agent-id`；apikey 用 Bearer | `FC:internal/api/openai.go:28-40,363`；`FC:internal/api/server.go` |
 | DeepSeek 密钥变量名 `DEEPSEEK_API_KEY` | `FC:internal/provider/credentials.go:165` |
 | docker 后端调用 `docker` CLI 并继承环境变量 → `DOCKER_HOST` 生效（源码推断） | `FC:internal/sandbox/docker.go` |

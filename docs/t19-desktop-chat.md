@@ -28,6 +28,7 @@ Tauri 壳（src-tauri/src/service.rs，Supervisor）
 
 - 壳每次启动生成 64 位十六进制随机令牌，服务监听 `127.0.0.1` 随机端口（`HEYBE_SERVICE_PORT=0`），就绪时在标准输出打一行 `HEYBE_SERVICE_READY {"port":N}`（不含令牌）。
 - 前端只通过 Tauri 命令 `service_info` 拿 `{status,url,token}`，请求带 `Authorization: Bearer`；除 `GET /health` 外没令牌一律 401（常量时间比较）。
+- gateway 用 `fastclaw gateway --port $FASTCLAW_PORT` 前台子命令启动，stdin 指向 `/dev/null`，**不需要 TTY**（从 Dock/Finder 启动也行）。以前直接跑无子命令的 `fastclaw`：FastClaw v1.4.0 根命令把 `/dev/null` 当成交互终端（`cmd/fastclaw/main.go` 的 `RunE` + `cmd_chat.go` 的 `isInteractiveTerminal` 只看是不是字符设备），于是走聊天：先拉起一个后台 daemon（服务退出后还留着），再开 TUI，因为没有 `/dev/tty` 报 `could not open a new TTY: open /dev/tty: device not configured` 退出，服务跟着退出、被壳重启，循环。无 TTY 复现/验证：`FASTCLAW_BIN=… scripts/dev/gateway-notty-check.sh`（新会话 = 没有控制终端；Linux 用 `setsid`，macOS 用 perl `POSIX::setsid`）。
 - 服务启动时先拉起 gateway 并等 `/healthz`（最长 30 秒）；聊天接口默认开启（Agent = `HEYBE_FASTCLAW_AGENT_ID`，不设则用 `/v1/agents` 第一个）。
 - 崩溃重启：服务退出，或 `/health` 连续 3 次（每 2 秒一次）失败 → 杀整个进程组 → 退避 0.5/1/2/4/8 秒重启；界面显示“本地服务断开，正在重连…”，好了自动消失。
 - 退出（Cmd+Q）：壳给进程组发 SIGTERM，3 秒后 SIGKILL；服务收到 SIGTERM / 标准输入关闭（壳意外死掉）都会先停 gateway。gateway 自己挂了，服务也跟着退出并由壳重启。
