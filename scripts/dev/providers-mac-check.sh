@@ -10,7 +10,7 @@
 # 用法：
 #   scripts/dev/providers-mac-check.sh            # Mac 真实验收
 #   scripts/dev/providers-mac-check.sh --mock     # 任意机器干跑（内存钥匙串，FastClaw/Ollama 用假的）
-#   可选参数：--yes（不停下来等人确认）、--skip-ollama
+#   可选参数：--yes（不停下来等人确认；better-sqlite3 与当前 node 不匹配时直接 pnpm rebuild）、--skip-ollama
 #   可选环境变量：HEYBE_POC_ENV（默认 ~/.heybe-poc.env）、HEYBE_REPORT_DIR（默认 ~/heybe-reports）、
 #     HEYBE_OLLAMA_MODEL（默认 qwen2.5:3b）、OLLAMA_URL（默认 http://127.0.0.1:11434）、FASTCLAW_BIN
 set -uo pipefail
@@ -25,6 +25,7 @@ for a in "$@"; do
     *) echo "未知参数：$a" >&2; exit 2 ;;
   esac
 done
+YES_FLAG=$YES   # 只有显式 --yes 才自动重建原生模块；非交互只是不等人工确认
 [ -t 0 ] || YES=1
 
 G=$'\033[32m' R=$'\033[31m' Y=$'\033[33m' N=$'\033[0m'
@@ -79,6 +80,9 @@ trap cleanup EXIT
 TSX="${ROOT}/services/task-manager/node_modules/.bin/tsx"
 command -v node >/dev/null && command -v curl >/dev/null || { bad "预检：缺少 node 或 curl"; exit 1; }
 [ -x "$TSX" ] || { bad "预检：缺少 tsx，请先在仓库根目录执行 pnpm install"; exit 1; }
+# shellcheck source=lib-node-check.sh
+. "${ROOT}/scripts/dev/lib-node-check.sh"
+heybe_node_check "$ROOT" "$YES_FLAG" || { bad "预检：better-sqlite3 和当前 node $(node -v) 不匹配，任务服务起不来（见上面的说明）"; exit 1; }
 if [ "$MOCK" = 1 ]; then
   POC_ENV="${WORK}/heybe-poc.env"
   printf 'DEEPSEEK_API_KEY=sk-mock%s\n' "$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')" >"$POC_ENV"

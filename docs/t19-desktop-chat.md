@@ -32,7 +32,8 @@ Tauri 壳（src-tauri/src/service.rs，Supervisor）
 - 崩溃重启：服务退出，或 `/health` 连续 3 次（每 2 秒一次）失败 → 杀整个进程组 → 退避 0.5/1/2/4/8 秒重启；界面显示“本地服务断开，正在重连…”，好了自动消失。
 - 退出（Cmd+Q）：壳给进程组发 SIGTERM，3 秒后 SIGKILL；服务收到 SIGTERM / 标准输入关闭（壳意外死掉）都会先停 gateway。gateway 自己挂了，服务也跟着退出并由壳重启。
 - 开发版命令：debug 构建用 `pnpm -C services/task-manager start`（tsx）；可用 `HEYBE_SERVICE_CMD` 覆盖。发布版打包成 sidecar 留给 19-h。
-- 一键开发脚本：`scripts/dev/heybe-desktop-dev.sh`（预检 → 首次自动跑 `scripts/poc/t021-mac.sh` 准备 FastClaw + DeepSeek → `pnpm install` → `pnpm tauri dev`）；`… check` 检查残留进程。
+- 一键开发脚本：`scripts/dev/heybe-desktop-dev.sh`（预检 → 首次自动跑 `scripts/poc/t021-mac.sh` 准备 FastClaw + DeepSeek → `pnpm install` → Node/better-sqlite3 检查 → `pnpm tauri dev`）；`… check` 检查残留进程。
+- Node 版本：仓库固定 Node 22（`.nvmrc`）。better-sqlite3 是原生模块，按安装时的 Node 编译；换了 Node（例如 Mac 默认变成 v26）会报 `NODE_MODULE_VERSION` 不一致、本地服务起不来。脚本在启动前实际加载一次，不匹配时用中文说明原因，并提示 `nvm use` / `fnm use` 或 `pnpm -r rebuild better-sqlite3`；交互终端会先问，加 `--yes` 直接重建。`providers-mac-check.sh` 同样检查。
 
 - 图标：`apps/desktop/src-tauri/icons/` 目前是**占位图标**（纯色底 + H，RGBA），正式图标由品牌方提供后覆盖同名文件（见该目录 `README.md`）。缺图标时 `generate_context!` 编译期 panic，`apps/desktop/test/icons.test.ts` 检查 `tauri.conf.json` 引用的图标都在。
 
@@ -45,7 +46,7 @@ Tauri 壳（src-tauri/src/service.rs，Supervisor）
 
 ## Mac 验收步骤（Apple 芯片）
 
-前提：`~/.heybe-poc.env` 里有 `DEEPSEEK_API_KEY=…`，权限 600（`chmod 600 ~/.heybe-poc.env`）；装了 Xcode 命令行工具、Node 20+、pnpm、Rust。
+前提：`~/.heybe-poc.env` 里有 `DEEPSEEK_API_KEY=…`，权限 600（`chmod 600 ~/.heybe-poc.env`）；装了 Xcode 命令行工具、Node 22（`.nvmrc`；`nvm use` / `fnm use`）、pnpm、Rust。
 
 1. 启动：
    ```bash
