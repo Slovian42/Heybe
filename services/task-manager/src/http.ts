@@ -16,6 +16,7 @@ import {
 import { EventRepository } from "./events.js";
 import { NodeRepository } from "./nodes.js";
 import { TaskRepository } from "./tasks.js";
+import { handleProviderRoute, type ProviderHttpDeps } from "./provider-http.js";
 
 const MAX_BODY = 1_000_000;
 
@@ -170,6 +171,8 @@ export interface TaskHttpOptions {
    * (e.g. FastClawNodeExecutor.abortTask) and return how many were aborted.
    */
   onCancel?: (taskId: string) => number;
+  /** Enables /providers/* routes (#16). Absent → those paths 404. */
+  providers?: ProviderHttpDeps;
 }
 
 async function handle(
@@ -183,6 +186,15 @@ async function handle(
   const tasks = new TaskRepository(db);
   const nodes = new NodeRepository(db);
   const events = new EventRepository(db);
+
+  if (opts.providers && url.pathname.startsWith("/providers/")) {
+    const body = method === "GET" || method === "DELETE" ? undefined : await readBody(req);
+    const out = await handleProviderRoute(opts.providers, method, url.pathname, body);
+    if (out) {
+      sendJson(res, out.status, out.body);
+      return;
+    }
+  }
 
   if (method === "POST" && url.pathname === "/tasks") {
     const raw = await readBody(req);

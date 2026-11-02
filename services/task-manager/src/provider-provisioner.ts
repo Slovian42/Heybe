@@ -24,7 +24,7 @@ export function probeAgentName(cfg: ProviderConfig): string {
 export function initArgs(cfg: ProviderConfig, hasKey: boolean, agentId?: string): string[] {
   const preset = PROVIDER_PRESETS[cfg.kind];
   const provider = cfg.kind === "openai_compatible" ? cfg.id : preset.fastclawProvider;
-  const args = ["agents", "init", probeAgentName(cfg), "--provider", provider, "--model", cfg.model, "--api-base", cfg.baseUrl];
+  const args = ["agents", "init", probeAgentName(cfg), "--provider", provider, "--model", cfg.kind === "ollama" ? `ollama/${cfg.model}` : cfg.model, "--api-base", cfg.baseUrl];
   if (hasKey) args.push("--api-key-env", PROVIDER_KEY_ENV);
   if (agentId) args.push("--id", agentId);
   return args;

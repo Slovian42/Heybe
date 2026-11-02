@@ -90,3 +90,4 @@ export {
   type ProbeChat,
   type TestDeps,
 } from "./provider-connection.js";
+export { handleProviderRoute, type ProviderHttpDeps } from "./provider-http.js";

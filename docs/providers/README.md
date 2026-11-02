@@ -42,3 +42,32 @@ FastClaw 会把上游错误转成 **HTTP 502 `agent_error`**，message 的格式
   - 单测 mock 了 `node:child_process.execFile`，断言每次调用的参数里都不含 key。
   - 没选 Rust keyring / security-framework 的原因：task-manager 是 Node 进程，用 Rust 还要加 Tauri↔Node 的 IPC 传 key；而且 Linux CI 上测不了 Mac API。等 16-f 接入设置界面时可以再评估。
   - 需要在 Mac 上验收：确认写入的条目能在“钥匙串访问”里看到；确认首次读取时没有 ACL 弹窗（条目由 `security` 创建，默认信任 `security`）。
+
+## Mac 验收脚本：`scripts/dev/providers-mac-check.sh`
+设置界面（16-f）完成之前，用这个脚本验收。它会在 loopback 上起一个任务服务（`services/task-manager/dev/providers-server.ts`），通过 `/providers/*` 接口完成全部步骤。
+
+| 接口 | 作用 |
+|---|---|
+| `GET/PUT/DELETE /providers/keys/:ref` | 查询、写入、删除 key，只返回 `{set,last4}` |
+| `POST /providers/keys/:ref/verify` | 回读比对，只返回 `{match}` |
+| `POST /providers/test` | 测试连接 |
+
+```bash
+pnpm install
+chmod 600 ~/.heybe-poc.env              # 内容：DEEPSEEK_API_KEY=...
+OLLAMA_CONTEXT_LENGTH=16384 ollama serve  # 或在 Ollama.app 里设置后重启
+scripts/dev/providers-mac-check.sh       # 可加 --skip-ollama、--yes
+scripts/dev/providers-mac-check.sh --mock  # box/CI 干跑（vitest 也会跑一遍）
+```
+
+| 步骤 | 成功标准 |
+|---|---|
+| 预检 | macOS，`~/.heybe-poc.env` 权限为 600 且含 `DEEPSEEK_API_KEY`，fastclaw 可执行 |
+| ① 钥匙串 | PUT 返回 `set=true`，last4 与本地一致；verify 返回 `match=true`；`security find-generic-password -s heybe -a heybe.provider.deepseek.mac-check` 能找到；人工在“钥匙串访问”里看到该条目后按 y |
+| ② DeepSeek | `/providers/test` 返回 `code=ok` |
+| ③ Ollama | `code=ok`（Ollama 在运行、能回复、上下文 ≥ 16384）；`context_too_small` 算失败 |
+| ④ 清理 | 接口回读 `set=false`，`security` 找不到条目；临时 FastClaw 停止，数据目录删除 |
+
+- 报告路径：`~/heybe-reports/providers-mac-check-<时间>.md`（权限 600，可用 `HEYBE_REPORT_DIR` 改）。报告只含 key 后 4 位，写完会自检，发现完整 key 就删除报告并判为失败。
+- key 的传递路径：从文件读入 shell 变量，用 `printf`（shell 内建命令）经 stdin 交给 curl，任务服务再经 `security -i` 的 stdin 写入钥匙串。全程不出现在任何进程的 argv 上。
+- 临时 FastClaw 运行在单独的 `FASTCLAW_HOME`（临时目录）里，不影响已有的 `~/.fastclaw`。
