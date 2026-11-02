@@ -13,7 +13,9 @@
 # 换 key：每次启动都比对 ~/.heybe-poc.env 里 DEEPSEEK_API_KEY 的 sha256 和数据目录里的指纹
 #   （${T021_HOME}/deepseek-key.sha256，600，只有哈希）。不一样（或没有指纹，比如 10-29 建的旧目录）就重跑 t021：
 #   带 --id 原地更新 Agent 的 key 并做一次真实对话。原地更新失败时把旧目录改名为 heybe-t021.bak-时间（不删）再重建。
-#   HEYBE_SKIP_KEY_TEST=1 跳过启动时的 DeepSeek 连接测试。
+#   HEYBE_SKIP_KEY_TEST=1 跳过启动时的 DeepSeek 连接测试，同时跳过 t021 自带的聊天冒烟测试
+#   （测试用法：故意放错 key，看对话气泡里的提示）。HEYBE_SKIP_CHAT_SMOKE=1 只跳过冒烟测试。
+#   都不设时，错的 key 在连接测试（或 t021 冒烟测试）里报 E_KEY_INVALID 并退出。
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -108,11 +110,17 @@ case "$(heybe_key_state "$T021_HOME" DEEPSEEK_API_KEY)/${HEYBE_KEY_SYNC_FORCE}" 
   *) echo "== ${POC_ENV} 里的 DEEPSEEK_API_KEY 变了：更新 Agent 的 key（scripts/poc/t021-mac.sh）" ;;
 esac
 rc=0
+SMOKE_SKIP="$(heybe_t021_smoke_flag)"
 # t021 自己再从 600 文件读一次 key；这里的 key 不传给它（env -u），只用来比对指纹
-heybe_key_sync "$T021_HOME" env -u DEEPSEEK_API_KEY "$REPO_ROOT/scripts/poc/t021-mac.sh" || rc=$?
+heybe_key_sync "$T021_HOME" env -u DEEPSEEK_API_KEY HEYBE_SKIP_CHAT_SMOKE="$SMOKE_SKIP" "$REPO_ROOT/scripts/poc/t021-mac.sh" || rc=$?
 unset DEEPSEEK_API_KEY
 [ -n "$HEYBE_KEY_SYNC_BACKUP" ] && warn "原地更新失败，旧数据目录已改名备份为 ${HEYBE_KEY_SYNC_BACKUP}（没删），已重建"
+if [ "$rc" != 0 ] && [ "$(heybe_t021_result_code "${T021_HOME}/t021-report.txt")" = E_KEY_INVALID ]; then
+  die E_KEY_INVALID "DeepSeek 不认这个 key（t021 冒烟测试上游 401）：模型密钥无效，请到 ${POC_ENV} 换成有效的 DEEPSEEK_API_KEY（保持 600），再重新运行本脚本"
+fi
 [ "$rc" = 0 ] || die E_T021 "t021 没跑通（见上面的报错；报告在 ${T021_HOME}/t021-report.txt）"
+[ "$SMOKE_SKIP" = 1 ] && [ "$HEYBE_KEY_SYNC_STATE/$HEYBE_KEY_SYNC_FORCE" != same/0 ] \
+  && warn "已跳过 t021 的聊天冒烟测试（HEYBE_SKIP_KEY_TEST=1 或 HEYBE_SKIP_CHAT_SMOKE=1，这是测试用法）：key 错了也会继续启动，对话时由界面报原因"
 [ -s "$KEY_FILE" ] || die E_APIKEY "没有 $KEY_FILE，请先跑通 scripts/poc/t021-mac.sh"
 [ "$(stat -f %Lp "$KEY_FILE")" = "600" ] || die E_PERM "$KEY_FILE 权限必须是 600"
 ok "FastClaw 数据目录 ${FC_HOME}，端口 ${PORT}"

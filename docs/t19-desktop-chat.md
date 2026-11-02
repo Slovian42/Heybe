@@ -59,12 +59,18 @@ Tauri 壳（src-tauri/src/service.rs，Supervisor）
 - FastClaw v1.4.0 没有单独改 key 的命令或 /v1 接口（/v1 只有 chat、agents、sessions）。现成的办法就是已批准的 `fastclaw agents init <名字> --id <agt_…> --api-key-env DEEPSEEK_API_KEY`：对已有 Agent 是原地更新（输出 `Agent "…" updated`），不换 owner、不生成新密码，重新从环境变量读 key；gateway 在跑时 CLI 会发 SIGHUP 让它重新加载。用真 FastClaw v1.4.0 + mock 上游核对过：更新后下一次对话上游收到的就是新 key（只比对了 Authorization 的 sha256）。
 - 现在的做法（`scripts/poc/lib-fc-key.sh`）：
   - 每次启动比对 `~/.heybe-poc.env` 里 key 的 sha256 和 `~/.local/opt/heybe-t021/deepseek-key.sha256`（一行 `sha256:<hex>`，权限 600，不存明文也不存末 4 位）。
-  - 没变：直接复用。变了，或者没有指纹文件（旧版本建的目录）：重跑 t021。t021 现在先按名字查 Agent id，已有就带 `--id` 原地更新，然后做一次真实流式对话，成功写指纹。
+  - 没变：直接复用。变了，或者没有指纹文件（旧版本建的目录）：重跑 t021。t021 现在先按名字查 Agent id，已有就带 `--id` 原地更新并写指纹，然后做一次真实流式对话（聊天冒烟测试）。对话失败时删掉指纹，下次启动会重跑 t021；上游 401 报 `E_KEY_INVALID`（以前是 `E_CHAT_agent_error`，heybe-desktop-dev.sh 再包成 `E_T021`）。
   - 原地更新失败（t021 以退出码 3 结束）：把旧目录改名为 `heybe-t021.bak-<时间>`（不删），再完整重建一次。
   - key 只在 shell 变量里，经 `fc_env_exec` 只交给那一次 `agents init` 子进程：只走环境继承（子 shell 里内建 `export` / `export -n` 后 `exec`），不进任何进程的 argv（以前用 `env -i K=V`，key 会出现在 `env` 的命令行里，2026-11-02 改；`scripts/poc/argv-secret-mock-test.sh` 检查）；`agents init` 的输出（新建时含管理员密码）整段丢弃。
   - 启动时连接测试：用 key 调一次 DeepSeek `GET /models`（不花钱），HTTP 401/403 → 红色 `✗ [E_KEY_INVALID]`，中文提示到 `~/.heybe-poc.env` 换 key；连不上或其他状态码只给黄色提示、继续启动。`HEYBE_SKIP_KEY_TEST=1` 跳过。
+  - 跳过开关（只用于测试，例如故意放错 key 去看对话气泡里的提示）：
+    - `HEYBE_SKIP_KEY_TEST=1`：heybe-desktop-dev.sh 跳过连接测试，**同时**让 t021 跳过聊天冒烟测试（否则错的 key 会在冒烟测试里 401，桌面端根本起不来）。
+    - `HEYBE_SKIP_CHAT_SMOKE=1`：只跳过 t021 的聊天冒烟测试。单独跑 `scripts/poc/t021-mac.sh` 时默认照常做冒烟测试，`HEYBE_SKIP_KEY_TEST` 对它不起作用。
+    - 跳过时终端打一行黄色提示：已跳过聊天冒烟测试，这是测试用法。t021 报告里记 `chat_smoke=skipped`，结果行是 `T021 RESULT: PASS step=done code=smoke_skipped`。
+    - 都不设时，错的 key 仍然报 `E_KEY_INVALID` 并退出（连接测试 401/403；连不上 DeepSeek 时由 t021 的冒烟测试兜底）。
+    - 为什么不改成“冒烟测试遇到 401 只警告”：冒烟测试是 t021 唯一的端到端检查。连接测试连不上（000）时就靠它拦住错 key；改成只警告，默认路径也会带着错 key 启动。显式开关只在测的人自己要的时候才放行。
 - #85 的 provisioner（设置页“测试连接”）：每次测试都用当前 key 跑一次 `agents init`，已存在时按 `already exists (id …)` 带 `--id` 重试，所以不会卡在旧 key（加了单测：换 key 后第二次测试带 `--id` 且子进程拿到新 key）。注意 FastClaw 的 key 是按提供方名字存的：同一个 `FASTCLAW_HOME` 里测试 `deepseek` 会同时更新聊天 Agent 用的 deepseek key（这正是“一提供方一把 key”的设计）。设置页保存 key（`PUT /providers/keys/:ref`）目前只写钥匙串，还没接到聊天 Agent（首启引导 19-g / #16-c 再接）。
-- 测试：`scripts/poc/key-sync-mock-test.sh`（假 fastclaw + 假 DeepSeek，CI 里跑）。
+- 测试：`scripts/poc/key-sync-mock-test.sh`（假 fastclaw + 假 DeepSeek，CI 里跑）；`scripts/poc/t021-smoke-mock-test.sh`（假 fastclaw / gateway / pnpm 跑完整 t021：默认冒烟、跳过开关、401 → `E_KEY_INVALID`，以及 heybe-desktop-dev.sh 的调用方式）。
 
 ## 模型调用失败的原因（Mac 复验问题 2）
 
@@ -155,5 +161,16 @@ level=WARN msg="no provider configured: default model is missing the '<provider>
 6. 关窗与退出：点窗口左上角红色关闭 → 窗口消失但 Dock 图标还在；点 Dock 图标 → 窗口回来，聊天记录还在。然后按 Cmd+Q。
    - 成功标准：终端里 `pnpm tauri dev` 结束；再执行 `scripts/dev/heybe-desktop-dev.sh check` 输出 `✓ 没有残留进程，端口 18963 已释放`。
 7. 安全检查（可选）：`curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:<端口>/chat/sessions/x/messages`（端口见终端 `heybe: service ready on 127.0.0.1:<端口>` 行）应返回 `401`。
+
+8. 换 key / 错 key（Mac 复验问题 1、2）。错的 key 放在单独的临时文件里，用 `HEYBE_POC_ENV` 指过去，不动 `~/.heybe-poc.env`：
+   ```bash
+   (umask 077; printf 'DEEPSEEK_API_KEY=sk-invalid-test-0000\n' > /tmp/heybe-bad.env)
+   # a. 默认：应在连接测试报红色 ✗ [E_KEY_INVALID] 并退出，桌面端不启动
+   HEYBE_POC_ENV=/tmp/heybe-bad.env scripts/dev/heybe-desktop-dev.sh
+   # b. 跳过连接测试：应看到 Agent 被更新，以及黄色“已跳过聊天冒烟测试…测试用法”，然后桌面端启动
+   HEYBE_POC_ENV=/tmp/heybe-bad.env HEYBE_SKIP_KEY_TEST=1 scripts/dev/heybe-desktop-dev.sh
+   ```
+   - b 的成功标准：发一条消息，对话气泡显示「模型密钥无效，请到设置里更换」。然后 Cmd+Q 退出。
+   - 恢复：`rm /tmp/heybe-bad.env && scripts/dev/heybe-desktop-dev.sh`。应提示 key 变了、Agent 被更新，对话恢复正常。
 
 有任何一步不符合，请把终端最后 30 行（不含密钥，脚本本身不会打印密钥）和截图发到 #19。
