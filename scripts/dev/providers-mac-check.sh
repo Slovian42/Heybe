@@ -97,6 +97,7 @@ fi
 [ -f "$POC_ENV" ] || { bad "预检：找不到 ${POC_ENV}"; exit 1; }
 P="$(perm "$POC_ENV")"
 [ "$P" = 600 ] || { bad "预检：${POC_ENV} 权限是 ${P}，必须是 600（chmod 600 ${POC_ENV}）"; exit 1; }
+# shellcheck source=/dev/null # 用户自己的 600 密钥文件，只读 DEEPSEEK_API_KEY
 KEY="$(set +u; DEEPSEEK_API_KEY=""; . "$POC_ENV" >/dev/null 2>&1; printf '%s' "${DEEPSEEK_API_KEY:-}")"
 [ -n "$KEY" ] || { bad "预检：${POC_ENV} 里没有 DEEPSEEK_API_KEY"; exit 1; }
 case "$KEY" in *[!A-Za-z0-9_.-]*) bad "预检：key 含不支持的字符"; exit 1 ;; esac

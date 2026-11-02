@@ -47,8 +47,8 @@ gw_pid() { cat "${LAB}/gw.pid" 2>/dev/null || true; }
 start_gateway() {
   # 不 source 密钥文件：模型 key 已在 agents init 时写库，gateway 只拿白名单环境变量（MCP/插件会继承它）
   fc_env_bg "${LAB}/gw.pid" "" nohup fastclaw gateway --port "${PORT}" >>"${GW_LOG}" 2>&1
-  local i
-  for i in $(seq 1 60); do
+  local _
+  for _ in $(seq 1 60); do
     kill -0 "$(gw_pid)" 2>/dev/null || { echo "gateway 进程启动后退出（端口被占？）" >&2; return 1; }
     curl -s -o /dev/null -m 1 "${BASE}/healthz" && return 0
     sleep 0.5
@@ -60,7 +60,7 @@ stop_gateway() { # [signal]
   local pid; pid="$(gw_pid)"
   [ -n "$pid" ] || return 0
   kill "-${1:-TERM}" "$pid" 2>/dev/null || true
-  local i; for i in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done
+  local _; for _ in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done
   kill -9 "$pid" 2>/dev/null || true
   rm -f "${LAB}/gw.pid"
 }
@@ -133,7 +133,7 @@ setup() {
   fc_lock_home "${FASTCLAW_HOME}"
   [ -n "${AGENT_ID}" ] || { echo "agents init 失败" >&2; exit 2; }
   stop_daemon
-  local i; for i in $(seq 1 40); do curl -s -o /dev/null -m 1 "${BASE}/healthz" || break; sleep 0.25; done
+  local _; for _ in $(seq 1 40); do curl -s -o /dev/null -m 1 "${BASE}/healthz" || break; sleep 0.25; done
   start_gateway
   new_key chat
   info setup "fastclaw=$(fastclaw version | head -1 | tr ' ' '_') agent=heybe-lab model=${MODEL} home=mktemp port=${PORT}"
@@ -147,8 +147,8 @@ suite_runtime() {
   local code fcode s r tA tB tC url st body
   # R1 指定 Agent + 流式
   r="$(chat chat "lab:r1" eu-a "只回复 OK 两个字母，不要调用任何工具。")"
-  if [ "$(jget "$r" done)" = true ] && [ "$(jget "$r" finish)" = stop ]; then pass R1 "指定 agent_id 流式完成：[DONE] finish_reason=stop chunks=$(jget "$r" chunks)"
-  else fail R1 "流式未正常结束：$(jget "$r" done)/$(jget "$r" finish) error=$(jget "$r" error)"; fi
+  if [ "$(jget "$r" "done")" = true ] && [ "$(jget "$r" finish)" = stop ]; then pass R1 "指定 agent_id 流式完成：[DONE] finish_reason=stop chunks=$(jget "$r" chunks)"
+  else fail R1 "流式未正常结束：$(jget "$r" "done")/$(jget "$r" finish) error=$(jget "$r" error)"; fi
 
   # R2 两会话隔离（同一 end-user，不同 session key；以及同 session key、不同 end-user）
   code="HB$(rand)"
@@ -221,14 +221,14 @@ suite_runtime() {
   ups="$(upstream_models_since "$before")"
   if [ "$(jget "$r" model)" = "$probe" ]; then pass R5a "响应 model 回显请求值"; else info R5a "响应 model=$(jget "$r" model)"; fi
   if [ -n "$ups" ] && ! printf '%s' "$ups" | grep -q 'heybe-nonexistent'; then
-    pass R5b "上游请求 model=${ups}（Agent 配置），未被请求字段覆盖；对话 $( [ "$(jget "$r" done)" = true ] && echo 正常完成 || echo 未完成)"
+    pass R5b "上游请求 model=${ups}（Agent 配置），未被请求字段覆盖；对话 $( [ "$(jget "$r" "done")" = true ] && echo 正常完成 || echo 未完成)"
   else fail R5b "上游 model=${ups:-<日志里没找到>}"; fi
 }
 
 # 等某个 SSE 文件里出现至少 n 个正文块（流已开始吐字）
 wait_deltas() { # file n timeout-s
-  local i
-  for i in $(seq 1 $(($3 * 4))); do
+  local _
+  for _ in $(seq 1 $(($3 * 4))); do
     [ "$(grep -c '"content"' "$1" 2>/dev/null || true)" -ge "$2" ] && return 0
     sleep 0.25
   done
@@ -237,7 +237,7 @@ wait_deltas() { # file n timeout-s
 LONG_PROMPT="请写一篇约 1500 字的散文，题目是《秋天的城市》，分成多个段落。不要调用任何工具。"
 
 suite_restart() {
-  local code r t sig f sess t0 t1 before rc first hits
+  local code r t sig f sess t0 t1 before first hits
   # S1 会话历史跨 SIGTERM 重启保留
   code="HR$(rand)"
   chat chat "lab:rs-hist" eu-r "测试暗号是 ${code}。请只在本对话里记住它，不要写文件或长期记忆，不要调用工具。只回复 OK。" >/dev/null
@@ -259,9 +259,9 @@ suite_restart() {
     t0=$(date +%s); stop_gateway "$sig"; t1=$(date +%s)
     wait
     r="$(cat "${LAB}/rs-${sig}.json")"
-    if [ "$(jget "$r" done)" = false ] && [ "$(jget "$r" finish)" = null ] && [ "$(jget "$r" error)" = null ]; then
+    if [ "$(jget "$r" "done")" = false ] && [ "$(jget "$r" finish)" = null ] && [ "$(jget "$r" error)" = null ]; then
       pass "S2-${sig}" "进行中的流被直接切断：无 [DONE]、无 finish_reason、无 error 块（收到 $(jget "$r" chunks) 块）；信号到进程退出 $((t1 - t0)) 秒"
-    else fail "S2-${sig}" "流收尾与预期不同：done=$(jget "$r" done) finish=$(jget "$r" finish) error=$(jget "$r" error)"; fi
+    else fail "S2-${sig}" "流收尾与预期不同：done=$(jget "$r" "done") finish=$(jget "$r" finish) error=$(jget "$r" error)"; fi
     # 中断那一轮留下了什么：用户消息（问暗号）/ 半截回复（在落盘数据里找已收到的正文片段）
     # 取已收到正文的中段（开头常是复述题目，会和用户消息撞上）
     first="$(jget "$r" text | tr -d ' ' | cut -c25-36)"
@@ -280,7 +280,7 @@ suite_restart() {
   before="$(wc -l <"${GW_LOG}")"
   HEYBE_LAB_CHAT_TIMEOUT=6 chat chat "lab:rs-client" eu-r "本条消息的暗号是 ${code}（只需记住，不必提及）。${LONG_PROMPT}" >"${LAB}/rs-client.json"
   r="$(cat "${LAB}/rs-client.json")"
-  info S3 "客户端 6 秒后主动断开：done=$(jget "$r" done) chunks=$(jget "$r" chunks)"
+  info S3 "客户端 6 秒后主动断开：done=$(jget "$r" "done") chunks=$(jget "$r" chunks)"
   t0=$(date +%s)
   while [ $(($(date +%s) - t0)) -lt 150 ]; do
     tail -n "+$((before + 1))" "${GW_LOG}" | grep -q 'msg="hook: after model call"' && break
@@ -306,14 +306,14 @@ suite_restart() {
   stop_gateway TERM
   fc_env_exec "" fastclaw daemon start --port "${PORT}" >/dev/null 2>&1 || true
   local dpid g1 g2 up=""
-  for i in $(seq 1 60); do curl -s -o /dev/null -m 1 "${BASE}/healthz" && { up=1; break; }; sleep 0.5; done
+  for _ in $(seq 1 60); do curl -s -o /dev/null -m 1 "${BASE}/healthz" && { up=1; break; }; sleep 0.5; done
   # 注意 fastclaw.pid 先写 daemon、随后被 gateway 自己覆盖成 gateway 的 pid，所以按进程名找
   dpid="$(lab_pids 'fastclaw daemon __run' | head -1)"
   g1="$(pgrep -P "${dpid:-0}" 2>/dev/null | head -1 || true)"
   if [ -z "$up" ] || [ -z "$g1" ]; then fail S5 "daemon 没起来（daemon=${dpid:-?} gateway=${g1:-?}）"
   else
     kill -9 "$g1"; t0=$(date +%s); g2=""
-    for i in $(seq 1 80); do
+    for _ in $(seq 1 80); do
       g2="$(pgrep -P "$dpid" 2>/dev/null | head -1 || true)"
       [ -n "$g2" ] && [ "$g2" != "$g1" ] && curl -s -o /dev/null -m 1 "${BASE}/healthz" && break
       g2=""; sleep 0.25
@@ -339,7 +339,7 @@ suite_restart() {
     HEYBE_PROBE_SESSION="lab:rs-adapter" HEYBE_PROBE_PROMPT="${LONG_PROMPT}" HEYBE_PROBE_MARK="$mark" \
     pnpm dlx tsx "${HERE}/fastclaw-stream-probe.ts" >"${LAB}/probe.json" 2>"${LAB}/probe.err") &
   tok=""
-  local i; for i in $(seq 1 480); do [ -f "$mark" ] && break; sleep 0.25; done
+  local _; for _ in $(seq 1 480); do [ -f "$mark" ] && break; sleep 0.25; done
   if [ ! -f "$mark" ]; then wait; fail S4 "适配层探针 120 秒内没收到正文"; return 0; fi
   stop_gateway TERM
   wait
