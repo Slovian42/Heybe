@@ -1,6 +1,7 @@
 // Entry point the desktop shell runs (19-b). Prints one READY line with the port on stdout.
 // Exits (stopping the gateway) on SIGTERM/SIGINT, when stdin closes (the shell died), or
 // when the owned gateway dies, so the shell's supervisor restarts both.
+import { SkillGuardError } from "./fastclaw-skills.js";
 import { GatewayError } from "./gateway.js";
 import { SandboxError } from "./sandbox.js";
 import { ERROR_PREFIX, READY_PREFIX, startHeybeService } from "./service.js";
@@ -33,10 +34,15 @@ async function main(): Promise<void> {
 
 main().catch((err: unknown) => {
   const message = err instanceof Error ? err.message : "start failed";
-  const code = err instanceof GatewayError || err instanceof SandboxError ? err.code : "E_SERVICE_START";
-  // A serve that ignores its key or an incompatible BoxLite won't fix itself on retry.
+  const code = err instanceof GatewayError || err instanceof SandboxError || err instanceof SkillGuardError ? err.code : "E_SERVICE_START";
+  // A serve that ignores its key or an incompatible BoxLite won't fix itself on retry; neither
+  // does a camoufox-cli setting that will not stick (E_FC_SKILL_DISABLE_FAILED: fail closed, no loop).
   const retryable =
-    err instanceof GatewayError ? err.retryable : err instanceof SandboxError ? err.code === "E_BOXLITE_EXITED" || err.code === "E_BOXLITE_READY_TIMEOUT" : true;
+    err instanceof GatewayError
+      ? err.retryable
+      : err instanceof SandboxError
+        ? err.code === "E_BOXLITE_EXITED" || err.code === "E_BOXLITE_READY_TIMEOUT"
+        : !(err instanceof SkillGuardError);
   process.stderr.write(`heybe-service: ${message}\n`);
   process.stdout.write(`${ERROR_PREFIX}${JSON.stringify({ code, message, retryable })}\n`);
   process.exit(retryable ? 1 : EXIT_FATAL);

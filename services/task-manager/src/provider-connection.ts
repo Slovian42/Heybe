@@ -1,6 +1,7 @@
 import { redactSecrets } from "@heybe/fastclaw-adapter";
 import type { FastClawSession, V1ChatCompletion, V1ChatMessage } from "@heybe/shared-types";
 import { validateProviderConfig, PROVIDER_PRESETS, type ProviderConfig, type ProviderTestResult } from "@heybe/shared-types";
+import { SkillGuardError } from "./fastclaw-skills.js";
 import { classifyProviderError, providerMessage } from "./provider-errors.js";
 import type { ProviderProvisioner } from "./provider-provisioner.js";
 import type { SecretStore } from "./provider-secrets.js";
@@ -96,6 +97,9 @@ export async function testProviderConnection(cfg: ProviderConfig, deps: TestDeps
     agentId = await deps.provisioner.provision(cfg, key);
   } catch (e) {
     log(`provision failed: ${e instanceof Error ? e.message : String(e)}`);
+    if (e instanceof SkillGuardError) {
+      return done({ status: "failed", code: "skill_disable_failed", message: providerMessage("skill_disable_failed"), detail: { code: e.code } });
+    }
     return done({ status: "failed", code: "fastclaw_error", message: providerMessage("fastclaw_error") });
   }
 

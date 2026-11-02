@@ -97,10 +97,28 @@ export {
   MIN_TOKEN_LENGTH,
   READY_PREFIX,
   chatFromEnv,
+  ensureSkillsAtStartup,
   startHeybeService,
   type HeybeService,
   type ServiceDeps,
+  type SkillStartupOptions,
 } from "./service.js";
+export {
+  CAMOUFOX_ENABLED_KEY,
+  CAMOUFOX_SKILL,
+  SKILL_DISABLE_FAILED_MESSAGE,
+  SkillGuardError,
+  camoufoxGetArgs,
+  camoufoxLogLine,
+  camoufoxSetArgs,
+  ensureCamoufoxDisabled,
+  readBackIsFalse,
+  spawnCliRunner,
+  type CamoufoxOutcome,
+  type CliResult,
+  type SkillGuardErrorCode,
+  type SkillGuardOptions,
+} from "./fastclaw-skills.js";
 export { MacKeychainSecretStore, MemorySecretStore, keyStatus, keychainAddCommand, type SecretStore, type SecurityRun } from "./provider-secrets.js";
 export { classifyProviderError, providerMessage, type ClassifiedProviderError } from "./provider-errors.js";
 export {

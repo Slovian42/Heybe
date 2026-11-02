@@ -8,8 +8,12 @@
 // - FASTCLAW_HOME ending in .pid: write our pid there.
 // - FASTCLAW_HOME a dir with fake.json: {cliVersion, statusVersion, readyAfterMs, neverReady, bindError, exitWith, recordEnv}
 // - recordEnv: write env.json (env names + sandbox settings, BOXLITE_API_KEY length only) for `gateway`.
+// - `agents config <agent> get|set <key> [value]` (camoufox-cli check): values live in config.json,
+//   every call is appended to config-calls.jsonl ({argv, envNames}). Knobs: configSetExit (set fails
+//   with that exit code), configReadback (get always prints this), configAgents (known agents;
+//   default any agt_* id) → "agent not found" exit 1 like FC agentcli.Resolve.
 import http from "node:http";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const home = process.env.FASTCLAW_HOME ?? "";
@@ -20,6 +24,35 @@ const args = process.argv.slice(2);
 if (args[0] === "version") {
   process.stdout.write(`FastClaw ${k.cliVersion ?? "v1.4.0"}\n  commit: fake\n`);
   process.exit(0);
+}
+if (args[0] === "agents" && args[1] === "config") {
+  const [, , agent, op, key, value] = args;
+  if (home && !home.endsWith(".pid")) {
+    appendFileSync(join(home, "config-calls.jsonl"), JSON.stringify({ argv: args, envNames: Object.keys(process.env).sort() }) + "\n");
+  }
+  const known = k.configAgents ? k.configAgents.includes(agent) : /^agt_/.test(agent ?? "");
+  if (!known) {
+    process.stderr.write(`Error: agent not found: ${agent}\n`);
+    process.exit(1);
+  }
+  const file = join(home, "config.json");
+  const state = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+  if (op === "set") {
+    if (k.configSetExit) {
+      process.stderr.write("Error: database is locked\n");
+      process.exit(k.configSetExit);
+    }
+    state[key] = value === "false" ? false : value === "true" ? true : value;
+    writeFileSync(file, JSON.stringify(state));
+    process.stdout.write(`Set ${key}\n`);
+    process.exit(0);
+  }
+  if (op === "get") {
+    const v = k.configReadback ?? (key in state ? (typeof state[key] === "string" ? state[key] : JSON.stringify(state[key])) : "null");
+    process.stdout.write(`${v}\n`);
+    process.exit(0);
+  }
+  process.exit(1);
 }
 if (args[0] !== "gateway") {
   process.stderr.write("Starting FastClaw gateway…\nError: could not open a new TTY: open /dev/tty: device not configured\n");

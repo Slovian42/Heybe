@@ -8,6 +8,7 @@ import { fastClawClientFromEnv, type FastClawClient } from "@heybe/fastclaw-adap
 
 import { fastClawChatStream, type ChatStreamFn } from "./chat.js";
 import { openTaskDb } from "./db.js";
+import { SkillGuardError, camoufoxLogLine, ensureCamoufoxDisabled, type CliRunner } from "./fastclaw-skills.js";
 import { startGateway, type GatewayHandle } from "./gateway.js";
 import { startTaskHttpServer, stopTaskHttpServer } from "./http.js";
 import { startSandbox, type SandboxHandle } from "./sandbox.js";
@@ -33,6 +34,53 @@ export interface ServiceDeps {
   chat?: ChatStreamFn;
   startGateway?: typeof startGateway;
   startSandbox?: typeof startSandbox;
+  /** Startup camoufox-cli check (default: ensureSkillsAtStartup). */
+  ensureSkills?: (opts: SkillStartupOptions) => Promise<void>;
+}
+
+export interface SkillStartupOptions {
+  bin: string;
+  env: Record<string, string | undefined>;
+  run?: CliRunner;
+  /** First agent id via GET /v1/agents (default: fastClawClientFromEnv(env)). undefined = none yet. */
+  firstAgent?: () => Promise<string | undefined>;
+  log?: (line: string) => void;
+}
+
+/**
+ * Every start, after our gateway is ready: make sure camoufox-cli is off (fastclaw-skills.ts,
+ * /v1-only exception 2). The setting is system scope, so any existing agent works as the CLI's
+ * <agent> argument: HEYBE_FASTCLAW_AGENT_ID, else the first agent from GET /v1/agents. No agent
+ * yet → skip (FastClawCliProvisioner turns it off when it creates one). No /v1 settings at all
+ * (no HEYBE_FASTCLAW_BASE_URL) → skip too: nothing can chat through this service then.
+ * Failure → SkillGuardError (E_FC_SKILL_DISABLE_FAILED); the caller stops the gateway.
+ */
+export async function ensureSkillsAtStartup(opts: SkillStartupOptions): Promise<void> {
+  const log = opts.log ?? ((l: string) => process.stderr.write(`${l}\n`));
+  const env = opts.env;
+  let agent = env.HEYBE_FASTCLAW_AGENT_ID?.trim() || undefined;
+  if (!agent) {
+    const first =
+      opts.firstAgent ??
+      (env.HEYBE_FASTCLAW_BASE_URL?.trim()
+        ? async () => (await fastClawClientFromEnv(env).listAgents({ limit: 1 })).agents[0]?.id
+        : undefined);
+    if (!first) {
+      log(camoufoxLogLine("skipped_no_agent"));
+      return;
+    }
+    try {
+      agent = await first();
+    } catch {
+      throw new SkillGuardError("查不到 Agent 列表（GET /v1/agents 失败）");
+    }
+    if (!agent) {
+      log(camoufoxLogLine("skipped_no_agent"));
+      return;
+    }
+  }
+  const outcome = await ensureCamoufoxDisabled(agent, { bin: opts.bin, run: opts.run, env });
+  log(camoufoxLogLine(outcome, agent));
 }
 
 /** Lazily resolve the agent (HEYBE_FASTCLAW_AGENT_ID or the first /v1/agents entry). */
@@ -90,6 +138,13 @@ export async function startHeybeService(
     } catch (err) {
       await sandbox?.stop();
       throw err;
+    }
+    try {
+      await (deps.ensureSkills ?? ensureSkillsAtStartup)({ bin, env });
+    } catch (err) {
+      await gateway.stop();
+      await sandbox?.stop();
+      throw err instanceof SkillGuardError ? err : new SkillGuardError("检查时出错");
     }
   }
 

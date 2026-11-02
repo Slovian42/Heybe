@@ -21,6 +21,7 @@ const MESSAGES: Record<ProviderTestCode, string> = {
   context_too_small: "Ollama 上下文长度不足 16k，回答可能被截断",
   provider_error: "提供方返回了错误",
   fastclaw_error: "本地 FastClaw 服务出错，请重启 Heybe 后再试",
+  skill_disable_failed: "没能关闭 FastClaw 的浏览器技能（camoufox-cli），为了安全先不用这个 Agent；请重启 Heybe 后再试",
   config_invalid: "配置不完整或格式不对",
 };
 

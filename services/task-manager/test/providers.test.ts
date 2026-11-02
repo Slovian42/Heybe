@@ -143,12 +143,20 @@ describe("classifyProviderError", () => {
   });
 });
 
+/** `agents config … get|set skills.entries.camoufox-cli.enabled` answers for runner mocks. */
+function configReply(args: string[], state: { off: boolean }) {
+  if (args[1] !== "config") return undefined;
+  if (args[3] === "set") state.off = args[5] === "false";
+  return { code: 0, stdout: args[3] === "get" ? (state.off ? "false\n" : "null\n") : `Set ${args[4]}\n`, stderr: "" };
+}
+
 describe("FastClawCliProvisioner", () => {
   it("key only in child env, never argv; keeps only Agent ID from stdout", async () => {
     const calls: Array<{ args: string[]; env: Record<string, string> }> = [];
+    const state = { off: false };
     const runner: CliRunner = async (args, env) => {
       calls.push({ args, env });
-      return { code: 0, stdout: "Admin password: hunter2hunter2\nAgent ID: agt_abc123\n", stderr: "" };
+      return configReply(args, state) ?? { code: 0, stdout: "Admin password: hunter2hunter2\nAgent ID: agt_abc123\n", stderr: "" };
     };
     const p = new FastClawCliProvisioner({ run: runner, env: { PATH: "/bin", DEEPSEEK_API_KEY: "leak-me-please" } });
     expect(await p.provision(cfgFor("deepseek"), KEY)).toBe("agt_abc123");
@@ -156,10 +164,23 @@ describe("FastClawCliProvisioner", () => {
     expect(calls[0].args).toContain(PROVIDER_KEY_ENV);
     expect(calls[0].env[PROVIDER_KEY_ENV]).toBe(KEY);
     expect(calls[0].env.DEEPSEEK_API_KEY).toBeUndefined();
+    // then the camoufox-cli check on the new agent, without the key
+    expect(calls.slice(1).map((c) => c.args.join(" "))).toEqual([
+      "agents config agt_abc123 get skills.entries.camoufox-cli.enabled",
+      "agents config agt_abc123 set skills.entries.camoufox-cli.enabled false",
+      "agents config agt_abc123 get skills.entries.camoufox-cli.enabled",
+    ]);
+    for (const c of calls.slice(1)) {
+      expect(JSON.stringify(c)).not.toContain(KEY);
+      expect(c.env[PROVIDER_KEY_ENV]).toBeUndefined();
+    }
   });
   it("existing agent → retry with --id", async () => {
     const seen: string[][] = [];
+    const state = { off: true };
     const runner: CliRunner = async (args) => {
+      const cfg = configReply(args, state);
+      if (cfg) return cfg;
       seen.push(args);
       return seen.length === 1
         ? { code: 1, stdout: "", stderr: 'agent "heybe-probe-openai" already exists (id agt_old9), pass --id' }
@@ -171,7 +192,10 @@ describe("FastClawCliProvisioner", () => {
   it("key changed → re-provision updates the existing agent (--id) with the new key (#19 复验问题 1)", async () => {
     const calls: Array<{ args: string[]; env: Record<string, string> }> = [];
     let created = false;
+    const state = { off: true };
     const runner: CliRunner = async (args, env) => {
+      const cfg = configReply(args, state);
+      if (cfg) return cfg;
       calls.push({ args, env });
       if (!created) {
         created = true;
