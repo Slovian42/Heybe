@@ -80,6 +80,17 @@ export {
   type ChatStreamInput,
 } from "./chat.js";
 export { classifyChatError, classifyUpstreamStatus, type ClassifiedChatError } from "./chat-errors.js";
+export {
+  BOXLITE_PREFIX,
+  SandboxError,
+  boxliteServeArgs,
+  generateKey,
+  sandboxGatewayEnv,
+  startSandbox,
+  type SandboxErrorCode,
+  type SandboxHandle,
+  type SandboxOptions,
+} from "./sandbox.js";
 export { GatewayError, startGateway, type GatewayErrorCode, type GatewayHandle, type GatewayOptions } from "./gateway.js";
 export {
   ERROR_PREFIX,

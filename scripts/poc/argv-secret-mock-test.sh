@@ -3,7 +3,8 @@
 # 做法：PATH 前面放记录 argv 的垫片（env、nohup、curl、sh、sudo），记下所有经过它们的中间进程的命令行；
 # 假 fastclaw / 假服务在运行时记下自己和全部祖先进程的 /proc/<pid>/cmdline（没有 /proc 时用 ps），
 # 并在睡着的时候拍一张 ps 全量快照。断言这些地方都没有假 key，而子进程环境里有。
-# 覆盖：fc_env_exec、fc_env_bg、heybe_fc_agent_upsert、heybe_deepseek_probe、fc_env_only_kv（providers / gateway 检查脚本用的写法）。
+# 覆盖：fc_env_exec、fc_env_bg、heybe_fc_agent_upsert、heybe_deepseek_probe、fc_env_only_kv（providers / gateway 检查脚本用的写法）、
+#       boxlite-poc.sh 的 BoxLite serve key / 代理 key（fc_env_bg + curl_k）。
 # 用法: scripts/poc/argv-secret-mock-test.sh   （任一断言失败退出码非 0）
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -46,6 +47,7 @@ out="$T/run.\$\$"
 printf '%s ' "\$0" "\$@" >"\$out.argv"
 printf '%s' "\${DEEPSEEK_API_KEY-}" >"\$out.envkey"
 printf '%s' "\${HEYBE_SERVICE_TOKEN-}" >"\$out.envtok"
+printf '%s|%s|%s|%s' "\${BOXLITE_SERVE_API_KEY-}" "\${HEYBE_BOXLITE_UPSTREAM_KEY-}" "\${HEYBE_BOXLITE_CLIENT_KEY-}" "\${BOXLITE_API_KEY-}" >"\$out.envbl"
 printf '%s|%s|%s|%s' "\${OTHER_SECRET_TOKEN-}" "\${PLAIN_DECOY-}" "\${FASTCLAW_ALLOW_HOST_EXEC-}" "\$(declare -F | tr '\n' ' ')" >"\$out.decoy"
 echo "\$\$" >"\$out.pid"
 : >"\$out.anc"
@@ -63,6 +65,7 @@ echo "Admin password: not-kept"
 exit 0
 SH
 chmod +x "$T/shim/fastclaw"
+cp "$T/shim/fastclaw" "$T/shim/boxlite"   # 同一个记录器，充当 boxlite serve / 代理
 PATH="$T/shim:$REAL_PATH"
 export FASTCLAW_HOME="$T/fc-home"; mkdir -p "$FASTCLAW_HOME"
 
@@ -138,6 +141,45 @@ no_ has "$r.envkey" "$KEY"
 ok_ test "$(cat "$r.decoy")" = "|||"
 assert_no_leak
 clean_runs
+
+# ---- 7. BoxLite serve key / 代理 key（boxlite-poc.sh step_serve / start_proxy / start_fastclaw 的写法） ----
+# shellcheck disable=SC2034 # 由 fc_env_bg 按名字导出
+bl_serve() { # serve key 只是函数里的局部 shell 变量
+  local BOXLITE_SERVE_API_KEY="$KEY"
+  fc_env_bg "$T/bl.pid" "BOXLITE_SERVE_API_KEY BOXLITE_HOME RUST_LOG" nohup boxlite serve --host 127.0.0.1 --port 1 >"$T/bl.log" 2>&1
+}
+bl_serve
+for _ in $(seq 50); do [ -n "$(ls "$T"/run.*.ps 2>/dev/null)" ] && break; sleep 0.1; done
+r=$(last_run)
+ok_ test "$(cat "$T/bl.pid")" = "$(cat "$r.pid")"
+ok_ test "$(cat "$r.envbl")" = "$KEY|||"
+no_ has "$r.envkey" "$KEY"          # 不带 DEEPSEEK_API_KEY
+ok_ has "$LOG" "nohup boxlite serve --host 127.0.0.1 --port 1"
+assert_no_leak
+clean_runs
+# shellcheck disable=SC2034 # 由 fc_env_bg 按名字导出
+bl_proxy() { # 代理：upstream = serve key，client = 给 FastClaw 的 key
+  local HEYBE_BOXLITE_UPSTREAM_KEY="$KEY" HEYBE_BOXLITE_CLIENT_KEY="$TOK"
+  fc_env_bg "$T/px.pid" "HEYBE_BOXLITE_PROXY_UPSTREAM HEYBE_BOXLITE_CLIENT_KEY HEYBE_BOXLITE_UPSTREAM_KEY" nohup boxlite proxy >"$T/px.log" 2>&1
+}
+bl_proxy
+for _ in $(seq 50); do [ -n "$(ls "$T"/run.*.ps 2>/dev/null)" ] && break; sleep 0.1; done
+r=$(last_run)
+ok_ test "$(cat "$r.envbl")" = "|$KEY|$TOK|"
+assert_no_leak
+clean_runs
+# shellcheck disable=SC2034 # 由 fc_env_exec 按名字导出
+BOXLITE_API_KEY="$TOK"   # FastClaw 拿 client key（不拿 serve key）
+fc_env_exec "BOXLITE_API_KEY" fastclaw gateway --port 1 >/dev/null
+r=$(last_run)
+ok_ test "$(cat "$r.envbl")" = "|||$TOK"
+assert_no_leak
+clean_runs
+unset BOXLITE_API_KEY
+# curl_k：Bearer 头经 stdin，不进 curl 的 argv（连不上的端口，只看 argv）
+curl_k "$KEY" -sS -m 2 -o /dev/null http://127.0.0.1:9/v1/boxes 2>/dev/null || true
+ok_ has "$LOG" "-K - -sS -m 2 -o /dev/null http://127.0.0.1:9/v1/boxes"
+assert_no_leak
 
 DEEPSEEK_API_KEY=""
 echo "argv-secret-mock-test: ${n} 条断言全部通过"

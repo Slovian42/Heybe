@@ -87,6 +87,17 @@ fc_env_bg() {
   ( FC_ENV_EXEC=1 fc_env_exec "$@" & echo $! >"${pidfile}" )
 }
 
+# curl_k <key> curl参数…：Authorization: Bearer 头经 stdin 配置（curl -K -）交给 curl，key 不进任何 argv。
+# key 为空时不带头（BoxLite serve 的公开路由 /v1/config、或者有意测 401）。
+curl_k() {
+  local k="$1"
+  shift
+  if [ -z "${k}" ]; then curl "$@"; return; fi
+  curl -K - "$@" <<EOF
+header = "Authorization: Bearer ${k}"
+EOF
+}
+
 # fc_lock_home <dir>：目录 700、文件 600（数据库里有明文模型 key）
 fc_lock_home() {
   [ -d "$1" ] || return 0

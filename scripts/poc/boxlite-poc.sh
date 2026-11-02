@@ -163,14 +163,22 @@ step_install() {
 #   /v1/boxes/{id}/executions/{exec}/attach、/v1/me、/v1/config）；openapi/box.openapi.yaml：
 #   "boxlite serve answers at http://localhost:8100/v1/…"，单租户部署不带 {prefix} 段。serve 不提供 /openapi.json。
 bl_url() { echo "http://127.0.0.1:${BOXLITE_PORT}$1"; }
-http_code() { # method url outfile [json] [max_time] → 打印 HTTP 状态码（连不上为 000）
-  local m=$1 u=$2 o=$3 d=${4:-} t=${5:-30} c
+# serve 启动时带随机 key（环境变量 BOXLITE_SERVE_API_KEY，600 文件，不进 argv）；除 GET /v1/config 外不带 key 一律 401
+serve_key_file() { echo "$POC_HOME/boxlite/serve.key"; }
+serve_key() { [ -s "$(serve_key_file)" ] && read_key_file "$(serve_key_file)"; return 0; }
+http_code() { # method url outfile [json] [max_time] → 打印 HTTP 状态码（连不上为 000）；自动带 serve key
+  local m=$1 u=$2 o=$3 d=${4:-} t=${5:-30} c k
+  k=$(serve_key)
   if [ -n "$d" ]; then
-    c=$(curl -sS -m "$t" -o "$o" -w '%{http_code}' -X "$m" -H 'Content-Type: application/json' -d "$d" "$u" 2>/dev/null) || true
+    c=$(curl_k "$k" -sS -m "$t" -o "$o" -w '%{http_code}' -X "$m" -H 'Content-Type: application/json' -d "$d" "$u" 2>/dev/null) || true
   else
-    c=$(curl -sS -m "$t" -o "$o" -w '%{http_code}' -X "$m" "$u" 2>/dev/null) || true
+    c=$(curl_k "$k" -sS -m "$t" -o "$o" -w '%{http_code}' -X "$m" "$u" 2>/dev/null) || true
   fi
   echo "${c:-000}"
+}
+bl_delete() { curl_k "$(serve_key)" -sS -X DELETE "$1?force=true" -o /dev/null || true; }   # url（不含 ?force）
+serve_noauth_code() { # 不带 key 访问 serve 的 /v1/boxes → HTTP 状态码（应为 401）
+  local c; c=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "$(bl_url /v1/boxes)" 2>/dev/null) || true; echo "${c:-000}"
 }
 load_api_base() {
   if [ -n "${BOXLITE_API_BASE:-}" ]; then API_BASE=$BOXLITE_API_BASE
@@ -178,15 +186,25 @@ load_api_base() {
   else fail "还不知道 BoxLite REST 前缀（先跑：scripts/poc/boxlite-poc.sh api-probe）"; fi
 }
 
+# shellcheck disable=SC2034 # BOXLITE_SERVE_API_KEY 由 fc_env_bg 按名字导出给 serve
 step_serve() {
   info "启动 boxlite serve（仅 127.0.0.1:${BOXLITE_PORT}）"
   if ! curl -sS -o /dev/null -m 2 "$(bl_url /v1/config)" 2>/dev/null; then
-    nohup boxlite serve --host 127.0.0.1 --port "$BOXLITE_PORT" >"$LOG_DIR/boxlite-serve.log" 2>&1 &
-    echo $! >"$POC_HOME/boxlite.pid"
+    new_key_file "$(serve_key_file)"
+    # key 只经环境变量交给 serve（fc_env_bg 只导出白名单 + 列出的变量；值不进 argv）
+    local BOXLITE_SERVE_API_KEY; BOXLITE_SERVE_API_KEY=$(read_key_file "$(serve_key_file)")
+    fc_env_bg "$POC_HOME/boxlite.pid" "BOXLITE_SERVE_API_KEY BOXLITE_HOME RUST_LOG" \
+      nohup boxlite serve --host 127.0.0.1 --port "$BOXLITE_PORT" >"$LOG_DIR/boxlite-serve.log" 2>&1
+    unset BOXLITE_SERVE_API_KEY
     wait_http "$(bl_url /v1/config)" 20 || fail "boxlite serve 未起来，见 ${LOG_DIR}/boxlite-serve.log"
   else
     info "127.0.0.1:${BOXLITE_PORT} 已有服务在跑，复用（不重启）"
+    [ -s "$(serve_key_file)" ] || fail "127.0.0.1:${BOXLITE_PORT} 上的 serve 不是本脚本带 key 启动的（缺 $(serve_key_file)）；先 scripts/poc/boxlite-poc.sh cleanup 再重跑"
   fi
+  local nc; nc=$(serve_noauth_code)
+  rec "boxlite_serve_noauth_http=$nc"
+  [ "$nc" = 401 ] || fail "boxlite serve 不带 key 访问 /v1/boxes 返回 ${nc}（应为 401）：serve 没启用 api-key（旧版 PoC 启动的？先 cleanup 再重跑）"
+  pass "boxlite serve 要求 api-key（不带 key → 401；key 只在环境变量里）"
   lsof -nP -iTCP:"$BOXLITE_PORT" -sTCP:LISTEN | awk 'NR>1{print $9}' | grep -qv '^127\.0\.0\.1:' \
     && fail "boxlite serve 监听了非回环地址（lsof -nP -iTCP:${BOXLITE_PORT} -sTCP:LISTEN）"
   pass "boxlite serve 只监听 127.0.0.1:${BOXLITE_PORT}"
@@ -236,24 +254,26 @@ step_ws_probe() {
   [ "$code" = 201 ] || [ "$code" = 200 ] || fail "创建 box 失败：POST ${API_BASE}/boxes → HTTP ${code}：$(head -c 300 "$o" 2>/dev/null)"
   box=$(python3 -c 'import sys,json;print(json.load(open(sys.argv[1]))["box_id"])' "$o") || fail "创建 box 响应里没有 box_id：$(head -c 300 "$o")"
   code=$(http_code POST "$base/boxes/$box/start" "$o" "" 300)
-  case $code in 2*) ;; *) curl -sS -X DELETE "$base/boxes/$box?force=true" -o /dev/null || true
+  case $code in 2*) ;; *) bl_delete "$base/boxes/$box"
     fail "start box 失败：POST ${API_BASE}/boxes/{id}/start → HTTP ${code}：$(head -c 300 "$o")" ;; esac
   t1=$(now_ms); rec "boxlite_cold_create_start_ms=$((t1-t0)) (首次含镜像拉取)"
   code=$(http_code POST "$base/boxes/$box/exec" "$o" '{"command":"sh","args":["-c","for i in 1 2 3; do echo HEYBE_WS_$i; sleep 1; done"]}' 60)
   if [ "$code" != 201 ] && [ "$code" != 200 ]; then
-    curl -sS -X DELETE "$base/boxes/$box?force=true" -o /dev/null || true
+    bl_delete "$base/boxes/$box"
     fail "exec 失败：POST ${API_BASE}/boxes/{id}/exec → HTTP ${code}：$(head -c 300 "$o")"
   fi
   exe=$(python3 -c 'import sys,json;print(json.load(open(sys.argv[1]))["execution_id"])' "$o") || fail "exec 响应里没有 execution_id"
-  python3 - "$BOXLITE_PORT" "$API_BASE" "$box" "$exe" <<'PY' 2>&1 | tee "$LOG_DIR/ws-probe.txt"
+  # serve key 经环境变量前缀交给 python（不进 argv）
+  HEYBE_BL_KEY="$(serve_key)" python3 - "$BOXLITE_PORT" "$API_BASE" "$box" "$exe" <<'PY' 2>&1 | tee "$LOG_DIR/ws-probe.txt"
 import sys,socket,base64,os
 port,api,box,exe=sys.argv[1:]
+auth=f"Authorization: Bearer {os.environ['HEYBE_BL_KEY']}\r\n" if os.environ.get("HEYBE_BL_KEY") else ""
 s=socket.create_connection(("127.0.0.1",int(port)),timeout=15)
 key=base64.b64encode(os.urandom(16)).decode()
 path=f"{api}/boxes/{box}/executions/{exe}/attach"
 print("attach_path:",f"{api}/boxes/{{box}}/executions/{{exec}}/attach")
 s.send((f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n"
-        f"Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
+        f"{auth}Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
 data=b""
 while b"\r\n\r\n" not in data:
     c=s.recv(4096)
@@ -271,9 +291,9 @@ if " 101 " in head:
 print("frames_with_marker:",sum(1 for i in (1,2,3) if f"HEYBE_WS_{i}".encode() in buf),"/3")
 PY
   local w0 w1; w0=$(now_ms)
-  curl -fsS -X POST "$base/boxes/$box/exec" -H 'Content-Type: application/json' -d '{"command":"true"}' -o /dev/null || true
+  curl_k "$(serve_key)" -fsS -X POST "$base/boxes/$box/exec" -H 'Content-Type: application/json' -d '{"command":"true"}' -o /dev/null || true
   w1=$(now_ms); rec "boxlite_warm_exec_submit_ms=$((w1-w0))"
-  curl -fsS -X DELETE "$base/boxes/$box?force=true" -o /dev/null || true
+  bl_delete "$base/boxes/$box"
   grep -q 'handshake:.* 101 ' "$LOG_DIR/ws-probe.txt" && grep -q 'frames_with_marker: 3 /3' "$LOG_DIR/ws-probe.txt" \
     || fail "WebSocket attach 不可用 —— 最大风险点命中（见 ${LOG_DIR}/ws-probe.txt）"
   pass "WebSocket attach 流式输出 3/3（${API_BASE}/boxes/{id}/executions/{exec}/attach）"
@@ -294,7 +314,7 @@ step_fc_compat() {
   else verdict=unknown; fi
   case $code in 2*)  # 意外创建成功：立刻删掉
     box=$(python3 -c 'import sys,json;print(json.load(open(sys.argv[1])).get("box_id",""))' "$o" 2>/dev/null || true)
-    [ -n "$box" ] && curl -sS -X DELETE "$(bl_url "$API_BASE/boxes/$box")?force=true" -o /dev/null || true
+    [ -n "$box" ] && bl_delete "$(bl_url "$API_BASE/boxes/$box")"
     verdict=ok ;; esac
   echo "$verdict" >"$COMPAT_FILE"
   rec "fastclaw_create_compat=$verdict fastclaw_create_probe_http=$code fastclaw_env_prefix=${API_BASE#/}"
@@ -309,14 +329,6 @@ step_fc_compat() {
 
 strip_auto_remove() { [ "$(cat "$COMPAT_FILE" 2>/dev/null)" = reject_auto_remove ] && echo 1 || echo 0; }
 proxy_client_key_file() { echo "$POC_HOME/boxlite/proxy-client.key"; }
-# curl_k <key> curl参数…：Authorization 头经 stdin 配置（curl -K -）传给 curl，key 不进任何 argv
-curl_k() {
-  local k=$1
-  shift
-  curl -K - "$@" <<EOF
-header = "Authorization: Bearer ${k}"
-EOF
-}
 new_key_file() { # path：生成随机 key 写入 600 文件（python 直接写文件，不经终端/argv）
   mkdir -p "$(dirname "$1")"
   ( umask 077; python3 -c 'import secrets,sys;open(sys.argv[1],"w").write(secrets.token_urlsafe(32))' "$1" )
@@ -341,16 +353,17 @@ start_proxy() {
   fi
   if [ -f "$POC_HOME/boxlite-proxy.pid" ]; then kill "$(cat "$POC_HOME/boxlite-proxy.pid")" 2>/dev/null || true; sleep 1; fi
   new_key_file "$(proxy_client_key_file)"
-  local HEYBE_BOXLITE_CLIENT_KEY HEYBE_BOXLITE_PROXY_UPSTREAM HEYBE_BOXLITE_PROXY_PORT HEYBE_BOXLITE_PROXY_STRIP_AUTO_REMOVE
+  local HEYBE_BOXLITE_CLIENT_KEY HEYBE_BOXLITE_UPSTREAM_KEY HEYBE_BOXLITE_PROXY_UPSTREAM HEYBE_BOXLITE_PROXY_PORT HEYBE_BOXLITE_PROXY_STRIP_AUTO_REMOVE
   HEYBE_BOXLITE_CLIENT_KEY=$(read_key_file "$(proxy_client_key_file)")
+  HEYBE_BOXLITE_UPSTREAM_KEY=$(read_key_file "$(serve_key_file)")
   HEYBE_BOXLITE_PROXY_UPSTREAM="http://127.0.0.1:${BOXLITE_PORT}"
   HEYBE_BOXLITE_PROXY_PORT=$BOXLITE_PROXY_PORT
   HEYBE_BOXLITE_PROXY_STRIP_AUTO_REMOVE=$(strip_auto_remove)
   # key 只经环境变量交给代理（fc_env_bg 只导出列出的变量；值不进 argv）
   fc_env_bg "$POC_HOME/boxlite-proxy.pid" \
-    "HEYBE_BOXLITE_PROXY_UPSTREAM HEYBE_BOXLITE_PROXY_PORT HEYBE_BOXLITE_PROXY_STRIP_AUTO_REMOVE HEYBE_BOXLITE_CLIENT_KEY" \
+    "HEYBE_BOXLITE_PROXY_UPSTREAM HEYBE_BOXLITE_PROXY_PORT HEYBE_BOXLITE_PROXY_STRIP_AUTO_REMOVE HEYBE_BOXLITE_CLIENT_KEY HEYBE_BOXLITE_UPSTREAM_KEY" \
     nohup "$PROXY_TSX" "$PROXY_MAIN" >"$LOG_DIR/boxlite-proxy.log" 2>&1
-  HEYBE_BOXLITE_CLIENT_KEY=""
+  HEYBE_BOXLITE_CLIENT_KEY=""; HEYBE_BOXLITE_UPSTREAM_KEY=""
   local _i; for _i in $(seq 1 20); do proxy_up && break; sleep 1; done
   proxy_up || fail "BoxLite 代理未起来，见 ${LOG_DIR}/boxlite-proxy.log"
   lsof -nP -iTCP:"$BOXLITE_PROXY_PORT" -sTCP:LISTEN | awk 'NR>1{print $9}' | grep -qv '^127\.0\.0\.1:' \
@@ -600,7 +613,7 @@ step_cleanup() {
   info "清理"
   cleanup_fastclaw
   [ -f "$POC_HOME/boxlite.pid" ] && kill "$(cat "$POC_HOME/boxlite.pid")" 2>/dev/null || true
-  rm -f "$POC_HOME/boxlite.pid" "$API_FILE" "$COMPAT_FILE" "$SECRET_FILE"
+  rm -f "$POC_HOME/boxlite.pid" "$(serve_key_file)" "$API_FILE" "$COMPAT_FILE" "$SECRET_FILE"
   if command -v docker >/dev/null && [ -S "$HOME/.lima/$LIMA_NAME/sock/docker.sock" ]; then
     DOCKER_HOST="unix://$HOME/.lima/$LIMA_NAME/sock/docker.sock" docker ps -aq --filter label=fastclaw=sandbox \
       | xargs env DOCKER_HOST="unix://$HOME/.lima/$LIMA_NAME/sock/docker.sock" docker rm -f >/dev/null 2>&1 || true
@@ -641,7 +654,7 @@ step_report() {
     done
   } >"$raw" 2>&1
   # 脱敏：两个 key 的值 → ***；另外抹掉 token:/password/Bearer 形态
-  python3 - "$raw" "$REPORT" "$POC_ENV" "$(apikey_file boxlite)" "$(apikey_file docker)" "$(proxy_client_key_file)" <<'PY'
+  python3 - "$raw" "$REPORT" "$POC_ENV" "$(apikey_file boxlite)" "$(apikey_file docker)" "$(proxy_client_key_file)" "$(serve_key_file)" <<'PY'
 import sys,re,os
 raw,out,envf,*kfs=sys.argv[1:]
 secrets=[]

@@ -10,6 +10,7 @@ import { fastClawChatStream, type ChatStreamFn } from "./chat.js";
 import { openTaskDb } from "./db.js";
 import { startGateway, type GatewayHandle } from "./gateway.js";
 import { startTaskHttpServer, stopTaskHttpServer } from "./http.js";
+import { startSandbox, type SandboxHandle } from "./sandbox.js";
 
 export const READY_PREFIX = "HEYBE_SERVICE_READY ";
 /** Startup failure line on stdout: {"code","message","retryable"}; the shell shows `message`. */
@@ -23,7 +24,7 @@ export const MIN_TOKEN_LENGTH = 32;
 
 export interface HeybeService {
   port: number;
-  /** Rejects/resolves when the owned gateway dies; undefined when no gateway is owned. */
+  /** Resolves when the owned gateway (or its BoxLite sandbox) dies; undefined when no gateway is owned. */
   gatewayExited?: Promise<number | null>;
   stop(): Promise<void>;
 }
@@ -31,6 +32,7 @@ export interface HeybeService {
 export interface ServiceDeps {
   chat?: ChatStreamFn;
   startGateway?: typeof startGateway;
+  startSandbox?: typeof startSandbox;
 }
 
 /** Lazily resolve the agent (HEYBE_FASTCLAW_AGENT_ID or the first /v1/agents entry). */
@@ -60,18 +62,35 @@ export async function startHeybeService(
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("HEYBE_SERVICE_PORT invalid");
 
   let gateway: GatewayHandle | undefined;
+  let sandbox: SandboxHandle | undefined;
   const bin = env.HEYBE_FASTCLAW_GATEWAY_BIN?.trim();
   if (bin) {
     const fcPort = env.FASTCLAW_PORT?.trim() || "18953";
     const portNum = Number(fcPort);
     if (!Number.isInteger(portNum) || portNum <= 0 || portNum > 65535) throw new Error("FASTCLAW_PORT invalid");
-    gateway = await (deps.startGateway ?? startGateway)({
-      bin,
-      port: portNum,
-      env,
-      readyTimeoutMs: msFromEnv(env.HEYBE_FASTCLAW_READY_TIMEOUT_MS, 30_000),
-      healthUrl: `http://127.0.0.1:${fcPort}/healthz`,
-    });
+    // Opt-in BoxLite sandbox (sandbox.ts): serve + egress-disabling proxy first, then the gateway
+    // gets the sandbox env (incl. the proxy client key) through child-env `set`, never argv.
+    const boxliteBin = env.HEYBE_BOXLITE_BIN?.trim();
+    if (boxliteBin) {
+      sandbox = await (deps.startSandbox ?? startSandbox)({
+        bin: boxliteBin,
+        env,
+        readyTimeoutMs: msFromEnv(env.HEYBE_BOXLITE_READY_TIMEOUT_MS, 20_000),
+      });
+    }
+    try {
+      gateway = await (deps.startGateway ?? startGateway)({
+        bin,
+        port: portNum,
+        env,
+        childEnv: sandbox?.gatewayEnv,
+        readyTimeoutMs: msFromEnv(env.HEYBE_FASTCLAW_READY_TIMEOUT_MS, 30_000),
+        healthUrl: `http://127.0.0.1:${fcPort}/healthz`,
+      });
+    } catch (err) {
+      await sandbox?.stop();
+      throw err;
+    }
   }
 
   const db = openTaskDb(env.HEYBE_TASK_DB?.trim() || ":memory:");
@@ -81,19 +100,21 @@ export async function startHeybeService(
   } catch (err) {
     db.close();
     await gateway?.stop();
+    await sandbox?.stop();
     throw err;
   }
 
   let stopped = false;
   return {
     port: (server.address() as AddressInfo).port,
-    gatewayExited: gateway?.exited,
+    gatewayExited: gateway && sandbox ? Promise.race([gateway.exited, sandbox.exited]) : gateway?.exited,
     async stop() {
       if (stopped) return;
       stopped = true;
       await stopTaskHttpServer(server);
       db.close();
       await gateway?.stop();
+      await sandbox?.stop();
     },
   };
 }

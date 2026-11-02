@@ -6,7 +6,8 @@
 //
 // Behaviour knobs (FASTCLAW_HOME is on the child-env whitelist, so tests use it):
 // - FASTCLAW_HOME ending in .pid: write our pid there.
-// - FASTCLAW_HOME a dir with fake.json: {cliVersion, statusVersion, readyAfterMs, neverReady, bindError, exitWith}
+// - FASTCLAW_HOME a dir with fake.json: {cliVersion, statusVersion, readyAfterMs, neverReady, bindError, exitWith, recordEnv}
+// - recordEnv: write env.json (env names + sandbox settings, BOXLITE_API_KEY length only) for `gateway`.
 import http from "node:http";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -27,6 +28,13 @@ if (args[0] !== "gateway") {
 const i = args.indexOf("--port");
 const port = Number(i >= 0 ? args[i + 1] : process.env.FASTCLAW_PORT);
 if (home.endsWith(".pid")) writeFileSync(home, String(process.pid));
+if (k.recordEnv) {
+  const sandbox = Object.fromEntries(Object.entries(process.env).filter(([n]) => n.startsWith("FASTCLAW_SANDBOX_") || n === "FASTCLAW_DEPLOY"));
+  writeFileSync(
+    join(home, "env.json"),
+    JSON.stringify({ names: Object.keys(process.env).sort(), sandbox, apiKeyLength: (process.env.BOXLITE_API_KEY ?? "").length }),
+  );
+}
 if (k.exitWith !== undefined) {
   process.stderr.write("fake: config broken\n");
   process.exit(k.exitWith);
