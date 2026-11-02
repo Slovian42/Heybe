@@ -7,7 +7,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "start": "tsx src/main.ts"
+    "start": "tsx src/main.ts --heybe-role=task-manager"
   },
   "dependencies": {
     "@heybe/fastclaw-adapter": "workspace:*",

@@ -12,6 +12,7 @@ import { SkillGuardError, camoufoxLogLine, ensureCamoufoxDisabled, type CliRunne
 import { startGateway, type GatewayHandle } from "./gateway.js";
 import { startTaskHttpServer, stopTaskHttpServer } from "./http.js";
 import { startSandbox, type SandboxHandle } from "./sandbox.js";
+import { openStateDir, sandboxPorts, serviceModeLine, type ServiceState, type StateDir } from "./service-state.js";
 
 export const READY_PREFIX = "HEYBE_SERVICE_READY ";
 /** Startup failure line on stdout: {"code","message","retryable"}; the shell shows `message`. */
@@ -36,6 +37,8 @@ export interface ServiceDeps {
   startSandbox?: typeof startSandbox;
   /** Startup camoufox-cli check (default: ensureSkillsAtStartup). */
   ensureSkills?: (opts: SkillStartupOptions) => Promise<void>;
+  /** stderr line writer (default: process.stderr). */
+  log?: (line: string) => void;
 }
 
 export interface SkillStartupOptions {
@@ -109,13 +112,19 @@ export async function startHeybeService(
   const port = Number(env.HEYBE_SERVICE_PORT ?? "0");
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("HEYBE_SERVICE_PORT invalid");
 
+  const log = deps.log ?? ((l: string) => process.stderr.write(`${l}\n`));
+  // HEYBE_SERVICE_STATE_DIR (dev/self-check only): pid + modes/ports (no keys) + the proxy's log lines.
+  const stateDirPath = env.HEYBE_SERVICE_STATE_DIR?.trim();
+  const stateDir: StateDir | undefined = stateDirPath ? openStateDir(stateDirPath) : undefined;
   let gateway: GatewayHandle | undefined;
   let sandbox: SandboxHandle | undefined;
+  let gatewayPort: number | undefined;
   const bin = env.HEYBE_FASTCLAW_GATEWAY_BIN?.trim();
   if (bin) {
     const fcPort = env.FASTCLAW_PORT?.trim() || "18953";
     const portNum = Number(fcPort);
     if (!Number.isInteger(portNum) || portNum <= 0 || portNum > 65535) throw new Error("FASTCLAW_PORT invalid");
+    gatewayPort = portNum;
     // Opt-in BoxLite sandbox (sandbox.ts): serve + egress-disabling proxy first, then the gateway
     // gets the sandbox env (incl. the proxy client key) through child-env `set`, never argv.
     const boxliteBin = env.HEYBE_BOXLITE_BIN?.trim();
@@ -124,6 +133,10 @@ export async function startHeybeService(
         bin: boxliteBin,
         env,
         readyTimeoutMs: msFromEnv(env.HEYBE_BOXLITE_READY_TIMEOUT_MS, 20_000),
+        log: (l: string) => {
+          log(`heybe-sandbox: ${l}`);
+          stateDir?.sandboxLog(l);
+        },
       });
     }
     try {
@@ -159,9 +172,24 @@ export async function startHeybeService(
     throw err;
   }
 
+  const servicePort = (server.address() as AddressInfo).port;
+  const state: ServiceState = {
+    pid: process.pid,
+    service_port: servicePort,
+    sandbox: !bin ? "not_owned" : sandbox ? "boxlite" : "none",
+    // sandboxGatewayEnv sets FASTCLAW_DEPLOY=hosted; without the sandbox the gateway never gets it
+    // (child-env.ts does not forward FASTCLAW_DEPLOY), so FastClaw runs self-hosted.
+    deploy: !bin ? "unknown" : sandbox ? "hosted" : "self-hosted",
+    gateway_port: gatewayPort,
+    ...sandboxPorts(sandbox),
+    started_at: new Date().toISOString(),
+  };
+  log(serviceModeLine(state));
+  stateDir?.write(state);
+
   let stopped = false;
   return {
-    port: (server.address() as AddressInfo).port,
+    port: servicePort,
     gatewayExited: gateway && sandbox ? Promise.race([gateway.exited, sandbox.exited]) : gateway?.exited,
     async stop() {
       if (stopped) return;
@@ -170,6 +198,7 @@ export async function startHeybeService(
       db.close();
       await gateway?.stop();
       await sandbox?.stop();
+      stateDir?.remove();
     },
   };
 }

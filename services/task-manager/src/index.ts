@@ -153,3 +153,15 @@ export {
   type BoxliteProxyOptions,
   type FcCompatVerdict,
 } from "./boxlite-proxy.js";
+export {
+  ROLE_MARKER,
+  STATE_JSON_FILE,
+  STATE_PID_FILE,
+  STATE_SANDBOX_LOG,
+  openStateDir,
+  sandboxPorts,
+  serviceModeLine,
+  type SandboxMode,
+  type ServiceState,
+  type StateDir,
+} from "./service-state.js";
