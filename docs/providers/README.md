@@ -32,9 +32,31 @@
 
 FastClaw 会把上游错误转成 **HTTP 502 `agent_error`**，message 的格式为 `API error <上游状态>: <上游 body>`（2026-11-02 实测 DeepSeek 401）。DNS 失败或连接被拒时，FastClaw 内部会重试，Heybe 这边看到的是超时。所以 Ollama 先探测 `/api/tags`。
 
+## 已确认的决定（Yang，2026-11-02）
+
+### 决定 1：每种提供方只配一个密钥
+- **规则**：deepseek、openai、anthropic、openrouter、ollama 这五种内置提供方，每种最多一份配置、一个密钥。自定义兼容接口（openai_compatible）按**配置 id** 命名，可以有多个。
+- **原因**：FastClaw v1.4.0 的提供方配置（key + base）按**提供方名称全局共享**。所有用 `--provider deepseek` 的 Agent 共用最后一次 `agents init` 写进去的 key 和 base。如果允许配两份 DeepSeek，后写的会悄悄覆盖先写的，所有 Agent 都换了 key。同理，“测试连接”也会覆盖当前正在用的同名配置。
+- **代码里怎么做**（`packages/shared-types/src/providers.ts`）：
+  - `fastclawProviderName(cfg)`：内置类型取预设名（如 `deepseek`），openai_compatible 取配置 id。`initArgs` 的 `--provider` 也用它。
+  - `upsertProviderConfig(list, cfg)`：id 相同 → **覆盖**（就地更新）；id 不同但提供方名称相同 → **拒绝**，抛 `DuplicateProviderError`，提示“已经配置过 deepseek（配置 “…”）。每种提供方只能配一个密钥：FastClaw 按提供方名称全局共享配置，再加一个会覆盖前一个。请修改已有配置；需要多个端点请用‘自定义兼容接口’。”
+  - `validateProviderSet(list)`：整组校验，报告重复 id 和同名提供方。
+  - `validateProviderConfig`：openai_compatible 的 id 不能用内置提供方的名字（`RESERVED_PROVIDER_NAMES`），否则会覆盖那个内置提供方的 key 和 base。
+  - `providerKeyRef(cfg)`：约定的钥匙串条目名 `heybe.provider.<提供方名称>`，一种提供方一个条目。
+  - 测试：`services/task-manager/test/provider-rules.test.ts`。
+- 设置界面（16-f）保存前调用 `upsertProviderConfig`，把错误信息原样显示给用户。
+
+### 决定 2：建 Agent 走本机 `fastclaw agents init`（“只通过 /v1 调用”的例外）
+- **例外内容**：Heybe 对 FastClaw 的调用原则上只走 `/v1`。唯一例外是用本机命令行 `fastclaw agents init` 建或更新绑定提供方的 Agent（`services/task-manager/src/provider-provisioner.ts` 的 `FastClawCliProvisioner`）。对话、查询等其他操作仍然只走 `/v1`；不调用 `/api/*`（`scripts/check-boundaries.mjs` 仍然检查适配层）。
+- **原因**：FastClaw v1.4.0 的 `/v1` 没有设置提供方的接口，`/v1/agents` 不接受 provider、key、base 字段。
+- **硬性要求**（已实现并有测试）：
+  - 密钥**只放在子进程的环境变量** `HEYBE_PROVIDER_KEY` 里，命令参数只带变量名（`--api-key-env HEYBE_PROVIDER_KEY`），`ps` / argv 里看不到密钥。
+  - 子进程环境走 `buildChildEnv` 白名单，父进程里其他像密钥的变量（如 `DEEPSEEK_API_KEY`）不会传下去。
+  - 密钥不写进日志：CLI 的 stdout 只取 `Agent ID:` 一行，其余（可能含管理员密码）丢弃；失败时的错误信息只含退出码，不含 CLI 输出；诊断日志先经 `redactSecrets`。
+  - 测试：`provider-rules.test.ts` 用一个假的 `fastclaw` 脚本真实 spawn，断言它收到的 argv（Linux 上还读 `/proc/<pid>/cmdline`）里没有密钥、环境变量里有；失败路径的错误信息里没有密钥和管理员密码。`providers.test.ts` 另有 mock runner 的同类断言。
+- 架构文档的例外清单：[architecture.md §3.10](../architecture.md#310-只通过-v1-调用的例外)。
+
 ## 已知限制（需要 Yang 知悉）
-- **provider 配置按名称全局共享**：所有用 `--provider deepseek` 的 Agent 共用最后一次 `agents init` 写入的 key 和 base。因此“测试连接”会**覆盖**正在使用的配置。v1 只允许每种类型配置一个；openai_compatible 用配置 id 作为 provider 名，彼此互不影响。
-- **建 Agent 走 CLI**：FastClaw v1.4.0 的 `/v1/agents` 不接受 provider、key、base 这些字段，所以只有 provisioning 用 CLI，对话仍然只走 /v1。
 - **fastclaw.db 中的 key 是明文**：用 700/600 权限缓解（`lockPrivateTree`），不对其加密。
 - **钥匙串写入（2026-11-02 改）**：执行 `/usr/bin/security -i`（交互模式），把 `add-generic-password -U -s "heybe" -a "<keyRef>" -w "<key>"` 这一行从 **stdin** 写入。key 不出现在任何进程的 argv 上，`ps` 看不到。读取用 `find-generic-password -w`，值只从 stdout 返回。
   - key 里不能有引号、反斜杠或控制字符，否则会拒绝写入。所有主流提供方的 key 都不含这些字符。

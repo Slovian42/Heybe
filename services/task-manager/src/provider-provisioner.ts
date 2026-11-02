@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { PROVIDER_PRESETS, type ProviderConfig } from "@heybe/shared-types";
+import { fastclawProviderName, type ProviderConfig } from "@heybe/shared-types";
 import { buildChildEnv } from "./child-env.js";
 
 /** Creates/updates the FastClaw agent bound to a provider. Returns the agent id. */
@@ -22,8 +22,7 @@ export function probeAgentName(cfg: ProviderConfig): string {
 
 /** Build `fastclaw agents init` args. The key is never on argv; only the env var name is. */
 export function initArgs(cfg: ProviderConfig, hasKey: boolean, agentId?: string): string[] {
-  const preset = PROVIDER_PRESETS[cfg.kind];
-  const provider = cfg.kind === "openai_compatible" ? cfg.id : preset.fastclawProvider;
+  const provider = fastclawProviderName(cfg);
   const args = ["agents", "init", probeAgentName(cfg), "--provider", provider, "--model", cfg.kind === "ollama" ? `ollama/${cfg.model}` : cfg.model, "--api-base", cfg.baseUrl];
   if (hasKey) args.push("--api-key-env", PROVIDER_KEY_ENV);
   if (agentId) args.push("--id", agentId);
