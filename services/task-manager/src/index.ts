@@ -68,3 +68,15 @@ export {
   saveArtifact,
   type SavedArtifact,
 } from "./artifacts.js";
+export {
+  CHAT_ALLOWED_ORIGINS,
+  CHAT_PATH,
+  corsHeaders,
+  fastClawChatStream,
+  chatSessionKey,
+  classifyChatError,
+  handleChatMessage,
+  toServiceEvent,
+  type ChatStreamFn,
+  type ChatStreamInput,
+} from "./chat.js";

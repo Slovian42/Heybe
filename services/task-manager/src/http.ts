@@ -5,6 +5,7 @@ import type Database from "better-sqlite3";
 import type { Budget } from "@heybe/shared-types";
 import type { CreateNodeInput, CreateTaskInput } from "@heybe/shared-types/task-manager";
 
+import { CHAT_PATH, corsHeaders, handleChatMessage, type ChatStreamFn } from "./chat.js";
 import { LOOPBACK_HOST } from "./constants.js";
 import {
   ConflictError,
@@ -170,6 +171,8 @@ export interface TaskHttpOptions {
    * (e.g. FastClawNodeExecutor.abortTask) and return how many were aborted.
    */
   onCancel?: (taskId: string) => number;
+  /** Enables POST /chat/sessions/:id/messages (SSE). Omit to keep chat off. */
+  chat?: ChatStreamFn;
 }
 
 async function handle(
@@ -183,6 +186,21 @@ async function handle(
   const tasks = new TaskRepository(db);
   const nodes = new NodeRepository(db);
   const events = new EventRepository(db);
+
+  const chat = CHAT_PATH.exec(url.pathname);
+  if (chat && opts.chat) {
+    if (method === "OPTIONS") {
+      res.writeHead(204, corsHeaders(req.headers.origin));
+      res.end();
+      return;
+    }
+    if (method !== "POST") {
+      sendJson(res, 405, { error: "method not allowed" });
+      return;
+    }
+    await handleChatMessage(req, res, chat[1] ?? "", await readBody(req), opts.chat);
+    return;
+  }
 
   if (method === "POST" && url.pathname === "/tasks") {
     const raw = await readBody(req);

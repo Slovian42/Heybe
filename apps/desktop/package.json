@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json && vite build",
     "typecheck": "tsc -p tsconfig.json",
     "tauri": "tauri",
-    "tauri:build:mac": "tauri build --target aarch64-apple-darwin"
+    "tauri:build:mac": "tauri build --target aarch64-apple-darwin",
+    "test": "vitest run"
   },
   "dependencies": {
     "@heybe/shared-types": "workspace:*",
@@ -21,7 +22,8 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
-    "vite": "^5.4.10"
+    "vite": "^5.4.10",
+    "@types/node": "^20.17.6"
   },
   "license": "Apache-2.0"
 }
