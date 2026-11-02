@@ -18,6 +18,7 @@ import {
 import { EventRepository } from "./events.js";
 import { NodeRepository } from "./nodes.js";
 import { TaskRepository } from "./tasks.js";
+import { handleProviderRoute, type ProviderHttpDeps } from "./provider-http.js";
 
 const MAX_BODY = 1_000_000;
 
@@ -179,6 +180,8 @@ export interface TaskHttpOptions {
    * preflight needs `Authorization: Bearer <token>`. Never logged.
    */
   token?: string;
+  /** Enables /providers/* routes (#16). Absent → those paths 404. */
+  providers?: ProviderHttpDeps;
 }
 
 export function tokenMatches(header: string | string[] | undefined, token: string): boolean {
@@ -223,6 +226,14 @@ async function handle(
     }
     await handleChatMessage(req, res, chat[1] ?? "", await readBody(req), opts.chat);
     return;
+  }
+  if (opts.providers && url.pathname.startsWith("/providers/")) {
+    const body = method === "GET" || method === "DELETE" ? undefined : await readBody(req);
+    const out = await handleProviderRoute(opts.providers, method, url.pathname, body);
+    if (out) {
+      sendJson(res, out.status, out.body);
+      return;
+    }
   }
 
   if (method === "POST" && url.pathname === "/tasks") {
