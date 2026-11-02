@@ -27,6 +27,30 @@ describe("buildChildEnv", () => {
     expect(JSON.stringify(dropped)).not.toContain(FAKE);
   });
 
+  it("does not inherit sandbox settings (FASTCLAW_SANDBOX_*, DOCKER_HOST, FASTCLAW_DEPLOY) from the parent", () => {
+    const { env, dropped } = buildChildEnv({
+      PATH: "/b",
+      FASTCLAW_SANDBOX_ENABLED: "1",
+      FASTCLAW_SANDBOX_BACKEND: "docker",
+      FASTCLAW_SANDBOX_BOXLITE_URL: "http://127.0.0.1:8100",
+      FASTCLAW_SANDBOX_BOXLITE_PREFIX: "v1",
+      DOCKER_HOST: "unix:///x/docker.sock",
+      FASTCLAW_DEPLOY: "hosted",
+    });
+    expect(env).toEqual({ PATH: "/b" });
+    expect(dropped).toEqual(
+      ["DOCKER_HOST", "FASTCLAW_DEPLOY", "FASTCLAW_SANDBOX_BACKEND", "FASTCLAW_SANDBOX_BOXLITE_PREFIX", "FASTCLAW_SANDBOX_BOXLITE_URL", "FASTCLAW_SANDBOX_ENABLED"],
+    );
+  });
+
+  it("BOXLITE_API_KEY passes only as an explicit extra (the sandbox client key)", () => {
+    expect(isSecretEnvName("BOXLITE_API_KEY")).toBe(true);
+    expect(buildChildEnv({ BOXLITE_API_KEY: FAKE }).env.BOXLITE_API_KEY).toBeUndefined();
+    const { env } = buildChildEnv({}, { extra: ["BOXLITE_API_KEY"], set: { BOXLITE_API_KEY: FAKE } });
+    expect(env.BOXLITE_API_KEY).toBe(FAKE);
+    expect(buildChildEnv({}, { set: { BOXLITE_API_KEY: FAKE } }).env.BOXLITE_API_KEY).toBeUndefined();
+  });
+
   it("forwards a secret only when named in extra", () => {
     const { env } = buildChildEnv({ PATH: "/b", DEEPSEEK_API_KEY: FAKE, OPENAI_API_KEY: FAKE }, { extra: ["DEEPSEEK_API_KEY"] });
     expect(env.DEEPSEEK_API_KEY).toBe(FAKE);

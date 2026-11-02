@@ -103,7 +103,8 @@ verify 曾把 `agents init` 的名字 `poc` 直接当 `model` / `agent_id` / `x-
 | 给 Agent 配 DeepSeek | `fastclaw agents init poc --provider deepseek --model deepseek/deepseek-chat --api-key-env DEEPSEEK_API_KEY`，再 `agents doctor` | 已自动（CLI，直接写 FASTCLAW_HOME 的数据库，未用 `/api/*`）。模型 id 可用 `HEYBE_POC_MODEL` 覆盖 |
 | 创建 apikey | `fastclaw apikey create --name heybe-poc-<backend> --type user` | 已自动 |
 | docker 后端网络 none | `fastclaw agents config poc set sandbox.network none` | 已自动写入，但这是 agent 作用域配置；系统沙箱池（`userspace.go:147` 用的 `cfg.Network`）是否读取它**待核实**，以验证 3 结果为准。CLI 没有写系统作用域 `sandbox` 的入口（`settingKey` 把 `sandbox.*` 固定为 agent 作用域）。若验证 3 失败，只能走设置页（底层是 `/api/*`）或改 FastClaw，标为**需手动** |
-| BoxLite 出网白名单 | FastClaw v1.4.0 创建 box 时不传 `allow_net`，无任何配置入口 | **做不到**，需改 FastClaw 或加 shim |
+| BoxLite 出网 | FastClaw v1.4.0 创建 box 时不传 `allow_net`/`network`，BoxLite 默认全出网 | **已自动**：FastClaw 一律经本地代理（`boxlite-proxy.ts`，只听 127.0.0.1）连 serve，代理给每个建箱请求强制 `outbound=disabled`；serve 带随机 api-key（`BOXLITE_SERVE_API_KEY`，只经环境变量），不带 key → 401 |
+| camoufox-cli 技能 | `fastclaw agents config poc set skills.entries.camoufox-cli.enabled false`（系统作用域），再 `get` 读回 `false` | 已自动（`setup` 里，两个后端都做）；镜像里的二进制仍在，靠断网约束 |
 
 ## 4. 单步运行（排查用）
 

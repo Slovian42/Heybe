@@ -69,4 +69,12 @@ SQLite + 全文检索；按权限读、检索、提交、修正、删除；用�
 |---|---|---|---|
 | 建或更新绑定提供方的 Agent 用本机命令行 `fastclaw agents init`（`services/task-manager/src/provider-provisioner.ts`） | FastClaw v1.4.0 的 `/v1` 没有设置提供方的接口，`/v1/agents` 不接受 provider、key、base | 密钥只放子进程环境变量 `HEYBE_PROVIDER_KEY`，argv 只带变量名，`ps` 看不到；子进程环境走白名单；开发脚本（t021 / `heybe-desktop-dev.sh`）里同样的 `agents init` 经 `scripts/poc/lib-fc-env.sh` 的 `fc_env_exec` 调用：在子 shell 里用内建 `export` / `export -n` 留下白名单变量后直接 `exec`，不经 `env -i K=V`（那样值会出现在 `env` 进程的 argv 里；2026-11-02 已改，`scripts/poc/argv-secret-mock-test.sh` 检查）；CLI 输出只取 `Agent ID:`，不写日志。对话仍只走 `/v1`。详见 [providers/README.md](providers/README.md#决定-2建-agent-走本机-fastclaw-agents-init只通过-v1-调用的例外) | Yang，2026-11-02 |
 
+待批准（**未实现，等 Yang 批准**）：
+
+| 拟新增例外 | 原因 | 约束 |
+|---|---|---|
+| 关闭浏览器技能用本机命令行 `fastclaw agents config <agent> set skills.entries.camoufox-cli.enabled false` | v1 不提供浏览器能力；`/v1` 没有关技能的接口，`skills.entries` 只能经 CLI（或 `/api/*`）写 | argv 不含密钥；和 `agents init` 同样经子进程白名单环境调用；写完 `get` 读回 `false` 才算成功。目前只在 PoC 脚本（`scripts/poc/boxlite-poc.sh setup`）里做 |
+
+沙箱进程（不是 FastClaw 调用，记在这里方便查）：`boxlite serve` 由 task-manager 以 `boxlite serve --host 127.0.0.1 --port N` 启动，随机 api-key 只经环境变量 `BOXLITE_SERVE_API_KEY`；FastClaw gateway 只拿到代理地址和代理的 client key（`BOXLITE_API_KEY`，`buildChildEnv` 里唯一显式放行的像密钥的名字），见 `services/task-manager/src/sandbox.ts`。
+
 相关约束：FastClaw 的提供方配置按名称全局共享，所以每种内置提供方只配一个密钥，自定义兼容接口按配置 id 命名、可多个（同上文档“决定 1”，Yang 2026-11-02）。

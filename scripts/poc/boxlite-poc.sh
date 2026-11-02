@@ -408,6 +408,20 @@ start_fastclaw() { # backend
   pass "FastClaw 以 backend=${backend}、ENFORCE=1 启动（未设置 FASTCLAW_ALLOW_HOST_EXEC）"
 }
 
+# v1 关闭 camoufox-cli 浏览器技能（#7）。skills.entries 是系统作用域（FC:internal/agentcli/agentcli.go
+#   systemSettingNamespaces），enabled:false 时技能加载器把它当禁用（FC:internal/agent/skills.go:209–213），
+#   技能目录里不再列出它（mock LLM 抓系统提示核对过）。镜像里的二进制仍在、系统提示固定段仍提到它，
+#   真正的约束是沙箱出网关闭（proxy 强制 network.mode=disabled）。产品侧同样的 CLI 调用属于新例外，等 Yang 批准。
+CAMOUFOX_KEY=skills.entries.camoufox-cli.enabled
+camoufox_off() { # backend（fc_env 已导出）
+  fastclaw agents config "$AGENT_NAME" set "$CAMOUFOX_KEY" false >/dev/null 2>&1 \
+    || fail "[${1}] 设置 ${CAMOUFOX_KEY}=false 失败"
+  local v; v=$(fastclaw agents config "$AGENT_NAME" get "$CAMOUFOX_KEY" 2>/dev/null | tr -d '[:space:]') || v=""
+  [ "$v" = false ] || fail "[${1}] ${CAMOUFOX_KEY} 读回是 ${v:-空}，不是 false"
+  rec "[$1] camoufox_skill_enabled=false"
+  pass "[${1}] camoufox-cli 技能已关闭（读回 ${CAMOUFOX_KEY}=false）"
+}
+
 # 配置 Agent（CLI，不走 /api/*）+ 生成 apikey（只写 600 文件）
 step_setup() { # backend
   local backend=$1 home kf out
@@ -430,6 +444,7 @@ step_setup() { # backend
       || fail "[${backend}] 设置 sandbox.network=none 失败"
     pass "[${backend}] sandbox.network=none 已写入 Agent 配置（是否作用于系统沙箱池待核实，见验证 3）"
   fi
+  camoufox_off "$backend"
   fastclaw agents doctor "$AGENT_NAME" >"$LOG_DIR/doctor-$backend.txt" 2>&1 || fail "[${backend}] agents doctor 未通过（见 ${LOG_DIR}/doctor-${backend}.txt）"
   pass "[${backend}] agents doctor 通过"
 

@@ -74,6 +74,7 @@ describe("startSandbox (fake boxlite serve)", () => {
     expect(rec.keySha).not.toBe(sha("parent-value-must-not-win"));
     expect(rec.envNames).toContain("BOXLITE_SERVE_API_KEY");
     expect(rec.envNames).not.toContain("DEEPSEEK_API_KEY");
+    expect(rec.envNames).not.toContain("FASTCLAW_SANDBOX_BOXLITE_URL");
 
     // serve itself: 401 without a key (except /v1/config).
     expect((await fetch(`${sb.serveUrl}/v1/boxes`)).status).toBe(401);

@@ -27,12 +27,11 @@ export const CHILD_ENV_ALLOWLIST: readonly string[] = [
   "FASTCLAW_HOME",
   "FASTCLAW_PORT",
   "FASTCLAW_BIND",
-  "FASTCLAW_SANDBOX_ENABLED",
-  "FASTCLAW_SANDBOX_ENFORCE",
-  "FASTCLAW_SANDBOX_BACKEND",
-  "FASTCLAW_SANDBOX_BOXLITE_URL",
-  "FASTCLAW_SANDBOX_BOXLITE_PREFIX",
-  "DOCKER_HOST",
+  // No FASTCLAW_SANDBOX_* / DOCKER_HOST / FASTCLAW_DEPLOY: the product's sandbox settings come only
+  // from sandboxGatewayEnv() (BoxLite via the egress-disabling proxy, src/sandbox.ts) as explicit
+  // extra/set, so a parent environment cannot point the gateway at another sandbox (e.g. a
+  // Lima/docker daemon or an unproxied BoxLite). The Lima/docker path lives only in scripts/poc
+  // (scripts/poc/lib-fc-env.sh keeps those names for the PoC).
 ];
 
 /** Never forwarded, even if a caller lists them: host_exec escape hatch. */

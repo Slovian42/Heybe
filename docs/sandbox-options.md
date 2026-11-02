@@ -34,7 +34,7 @@
 | Docker API 还是可插拔 runtime | **可插拔**。`Executor` / `ExecutorPool` 接口有三个实现：`docker`、`e2b`、`boxlite`，用 `FASTCLAW_SANDBOX_BACKEND` 选择，默认是 docker。接口注释里也提到可以接 Firecracker 等后端。 | `FC:internal/sandbox/executor.go`；`FC:internal/config/env.go:55`；`FC:internal/gateway/userspace.go`（约第 120–160 行，按 backend 选择执行器池） |
 | docker 后端怎么调用 | 不用 Docker Go SDK，而是 `exec.Command("docker", ...)` **调用 docker CLI**，包括 `create`、`start`、`exec`、`port`、`rm -f`。容器参数有：`--label fastclaw=sandbox`；`-v <workspace>:/workspace:rw`；skills 只读挂载；`--cpus` / `--memory` / `--network` 取自 Policy；端口只绑定到 `127.0.0.1`；`--add-host host.docker.internal:host-gateway`；启动命令是 `tail -f /dev/null`。 | `FC:internal/sandbox/docker.go`（`Create` 约第 198–365 行，`Exec` 约第 407 行）；`FC:internal/sandbox/docker_executor.go`；`FC:cmd/fastclaw/cmd_sandbox.go`（第 49、64、79 行） |
 | 能否指定 docker host/socket | FastClaw 自己**没有**相关配置项，源码里没有 `DOCKER_HOST`。但它调用 docker CLI 时没有覆盖 `cmd.Env`，子进程会继承父进程的环境变量，所以给 FastClaw 进程设置 `DOCKER_HOST=unix:///…/heybe.sock`（或 `DOCKER_CONTEXT`）就能把它指向任意 Docker 兼容 socket。前提是 PATH 里能找到 `docker` 可执行文件。这一点是从源码推断的，**待实测**。 | `FC:internal/sandbox/docker.go`（全文没有 `cmd.Env` 赋值）；docker CLI 环境变量说明：https://docs.docker.com/reference/cli/docker/#environment-variables |
-| 网络策略 | `Policy{NetMode: cfg.Network}`，可选 `none`、`host`、`bridge`。不设置就用 Docker 默认的 bridge（能访问外网）。Heybe 应该显式设置。 | `FC:internal/sandbox/docker.go:18-22`；`FC:internal/gateway/userspace.go:147`；`FC:internal/config/config.go:208` |
+| 网络策略 | `Policy{NetMode: cfg.Network}`，可选 `none`、`host`、`bridge`。不设置就用 Docker 默认的 bridge（能访问外网）。Heybe 应该显式设置。**2026-11-02 核实**：系统沙箱池读的是**系统作用域** `sandbox` 设置加环境变量，而 CLI `fastclaw agents config <agent> set sandbox.network none` 只写 **agent 作用域**，所以 PoC 里这样设了也不生效（docker 组验证 3 失败的原因）。Lima/docker 只留在 PoC 脚本里做对照，产品不走这条路（产品子进程不再继承 `DOCKER_HOST`）。 | `FC:internal/sandbox/docker.go:18-22`；`FC:internal/gateway/userspace.go:147`；`FC:internal/config/config.go:208` |
 | boxlite 后端 | 走 REST 加 WebSocket：`POST /{prefix}/boxes` → `start` → `PUT files`（上传 tar）→ `POST exec` → `GET …/attach`（WS 流式返回）→ `DELETE`。URL 用 `FASTCLAW_SANDBOX_BOXLITE_URL` 配置（默认是 BoxLite Cloud 的 dev 地址），鉴权是 `BOXLITE_API_KEY`（Bearer），默认镜像 `thinkany/fastclaw-sandbox:latest`。把 URL 指向本地 `http://127.0.0.1:8100/v1` 即可。 | `FC:internal/sandbox/boxlite_executor.go`（文件头注释和常量，约第 22–60 行）；`FC:internal/config/config.go:192-207`；`FC:internal/config/env.go:58-61,135-140` |
 | MCP 是否在沙箱内 | **不在**。stdio 类型的 MCP server 在**宿主**上用 `exec.Command` 直接启动，而且继承完整的 `os.Environ()`，所有宿主环境变量（包括密钥）都会传给 MCP 子进程。`internal/mcp/` 里没有任何和 sandbox 相关的代码。 | `FC:internal/mcp/stdio.go`（约第 36–47 行） |
 | 浏览器工具是否在沙箱内 | v1.4.0 没有独立的原生浏览器工具（仅凭 grep 判断，**待核实**）。浏览器能力靠沙箱镜像里预装的 `camoufox-cli`，通过 exec 调用，所以强制模式下浏览器跑在沙箱**内**。不强制时，如果模型不加 `sandbox:true`，就会去调用宿主上的程序。 | `FC:internal/agent/skills.go:394`（系统提示里列出镜像预装的 python、node、camoufox-cli 等）；`FC:internal/agent/tools/registry.go:763` |
@@ -77,7 +77,7 @@
 - 隔离：独立内核，文件只能看到显式共享的目录（virtiofs），网络可以在宿主侧控制。强度和 Docker Desktop 的 VM 边界相当，或者更强。
 
 **2a. BoxLite（libkrun）【推荐】**
-- 是什么：嵌入式 micro-VM 运行时，每个 box 一台 VM，能跑任意 OCI 镜像，数据可以持久化（QCOW2 写时复制）。支持出网白名单 `allow_net` 和密钥占位符注入（真实值不进 VM），还会叠加 seccomp 或 sandbox-exec 作为 OS 层沙箱。可以作为库嵌入（不需要守护进程），也可以用 `boxlite serve` 起本地 REST 服务。来源：https://github.com/boxlite-ai/boxlite ；https://github.com/boxlite-ai/boxlite/blob/main/docs/architecture/README.md
+- 是什么：嵌入式 micro-VM 运行时，每个 box 一台 VM，能跑任意 OCI 镜像，数据可以持久化（QCOW2 写时复制）。支持出网白名单 `allow_net` 和密钥占位符注入（真实值不进 VM）——**但这只是 BoxLite 的能力，不是 Heybe 现状**：FastClaw v1.4.0 建箱只发 `{image, auto_remove}`，不带任何网络设置，而 BoxLite 默认全放开出网（还能经 `host.boxlite.internal` / `192.168.127.254` 访问宿主机回环服务）。Heybe 的做法见第 4 节，还会叠加 seccomp 或 sandbox-exec 作为 OS 层沙箱。可以作为库嵌入（不需要守护进程），也可以用 `boxlite serve` 起本地 REST 服务。来源：https://github.com/boxlite-ai/boxlite ；https://github.com/boxlite-ai/boxlite/blob/main/docs/architecture/README.md
 - 系统和芯片：macOS 12 以上，**仅支持 Apple Silicon**，Intel Mac 标注为「Coming soon」。来源：https://docs.boxlite.ai/getting-started/installation
 - 许可：Apache-2.0，可以捆绑进闭源商业分发（保留 NOTICE 即可）。它依赖的 libkrun 和 libkrunfw 的许可证**待核实**：libkrun 是 Apache-2.0，libkrunfw 里打包了 Linux 内核，属于 GPL-2.0，作为独立组件分发时要提供对应源码。
 - 体积和启动：官方宣称「light enough to embed on your laptop」，具体安装体积和冷启动时间**待实测**。libkrun 类 micro-VM 通常是亚秒级到 1 秒级启动，这一点也待实测。
@@ -134,7 +134,7 @@
 | 1a sandbox-exec | 中（按路径） | 中 | 弱（共享内核） | 0 / 毫秒 | 系统自带 | 全部 Mac；已废弃 | 无 | ✗ 需新 executor，且失去 Linux 镜像 | 中到高 |
 | 1b App Sandbox | 中 | 中 | 弱 | 0 | 系统自带 | 全部 | app-sandbox | ✗ | 高（待核实可行性） |
 | 1c Endpoint Security | 仅审计 | 仅审计 | 无 | — | 需特批 | 全部 | ES 特批 | ✗ | 高 |
-| **2a BoxLite** | 强（只共享指定目录） | 强（allow_net 白名单） | **强（每个 box 独立内核）** | 待实测 / 待实测（预计秒级） | Apache-2.0 ✓（libkrunfw 是 GPL 内核，需提供源码，待核实） | macOS 12+，**仅 Apple Silicon** | hypervisor（待核实） | **✓ 原生后端**（WS 接口待实测） | 低到中 |
+| **2a BoxLite** | 强（只共享指定目录） | 能做到强，但**要 Heybe 自己强制**：FastClaw 不传网络设置、BoxLite 默认全出网；Heybe 经本地代理给每个建箱请求写死 `outbound=disabled`（不是 allow_net 白名单） | **强（每个 box 独立内核）** | 待实测 / 待实测（预计秒级） | Apache-2.0 ✓（libkrunfw 是 GPL 内核，需提供源码，待核实） | macOS 12+，**仅 Apple Silicon** | hypervisor（待核实） | **✓ 原生后端**（WS 接口待实测） | 低到中 |
 | 2b Lima vz + dockerd | 强 | 中到强 | 强（共享一台 VM，容器之间是 namespace） | 几百 MB / 十几秒级（待实测） | Apache-2.0 ✓（再加 Moby/CLI，Apache-2.0） | macOS 13+，两种芯片都支持（待核实） | virtualization | ✓ docker 后端加 DOCKER_HOST | 中 |
 | 2c vfkit | 强 | 自建 | 强 | 小 + 自建镜像 | Apache-2.0 ✓ | 待核实 | virtualization | ✓（需自建 Docker API） | 中到高 |
 | 2d apple/container | 强 | 强 | 强（每个容器一台 VM） | 待实测 | Apache-2.0 ✓ | **macOS 26 + Apple Silicon** | virtualization | ✗ 需新 executor 或 shim | 高 |
@@ -151,7 +151,8 @@
 
 **主方案：内置 BoxLite（`FASTCLAW_SANDBOX_BACKEND=boxlite`，URL 指向 Heybe 自己管理的本地 `boxlite serve`）**
 - 理由一：用户零依赖，许可干净（Apache-2.0），可以捆绑进闭源 Pro 分发。
-- 理由二：每个会话一台 micro-VM，隔离强度高于「共享 VM + 容器」，符合「沙箱默认强制」的定位；`allow_net` 和密钥占位符也正好满足助理场景。
+- 理由二：每个会话一台 micro-VM，隔离强度高于「共享 VM + 容器」，符合「沙箱默认强制」的定位。
+  - **更正（2026-11-02）**：之前写“`allow_net` 白名单提供强网络隔离”不成立。FastClaw v1.4.0 建箱时不传 `allow_net`/`network`，BoxLite 默认全放开出网（实测 Mac 上沙箱能连外网和宿主机）。v1 的网络隔离来自 Heybe 自己：`boxlite serve` 只听 127.0.0.1、带随机 api-key；FastClaw 只能连 Heybe 的代理（`services/task-manager/src/boxlite-proxy.ts`），代理给每个 `POST …/boxes` 强制写入 `network.outbound/inbound = disabled`（覆盖原值并记日志），即**完全断网，不是白名单**。联网查资料走宿主侧 `web_fetch`（D12，风险另记）。密钥占位符 v1 不用。
 - 理由三：FastClaw v1.4.0 已经有这个后端，Heybe 不需要 fork FastClaw。
 - 代价：首发只支持 Apple Silicon。（10-30 已定：v1 不支持 Intel Mac，只出 arm64 包，不为 Intel 做兜底。）
 
@@ -167,7 +168,7 @@
 | 阶段 | 内容 | 产出 |
 |---|---|---|
 | 0（现在，开发） | 开发者使用 OrbStack 和 docker 后端（已经写在 phase0-dev-env.md）。Slovian Inc 需要购买 OrbStack Pro 许可。 | 开发环境 |
-| 1（2 周内，PoC） | 在 Apple Silicon Mac 上跑 `boxlite serve`，再用 FastClaw v1.4.0 的 boxlite 后端完整跑一遍：exec 流式输出、文件读写、camoufox、端口预览。同时用 Lima vz + dockerd 做对照测试。 | 实测报告，以及选型定稿 |
+| 1（2 周内，PoC） | 在 Apple Silicon Mac 上跑 `boxlite serve`，再用 FastClaw v1.4.0 的 boxlite 后端完整跑一遍：exec 流式输出、文件读写、camoufox（v1 关闭该技能，见 `t032-tool-isolation.md` 第 4 行）、端口预览。同时用 Lima vz + dockerd 做对照测试。 | 实测报告，以及选型定稿 |
 | 2（里程碑内，打包） | Tauri sidecar 管理 boxlite（或 Lima）的生命周期；Developer ID 签名、hypervisor/virtualization entitlement、公证；首次运行时下载并预取沙箱镜像，带进度提示；系统和芯片检测（只出 arm64 包；Intel Mac 不支持，不做 x64 后备分支）。 | 可公证的 .dmg |
 | 3（之后） | MCP 放进沙箱运行；用 sandbox-exec 再包一层 VM 辅助进程；评估 apple/container 作为 macOS 26 的可选后端；Pro 版提供云沙箱兜底。 | 纵深防御，覆盖更多机型 |
 
