@@ -97,7 +97,7 @@ heybe_deepseek_probe() {
 }
 
 # heybe_key_sync <数据目录> <命令...>：key 指纹没变就什么都不做（返回 0）；变了（或没有指纹）就跑一次命令
-# （t021-mac.sh：更新 Agent、做一次真实对话、成功后写指纹）。
+# （t021-mac.sh：更新 Agent 后写指纹，再做一次真实对话；对话失败会删掉指纹）。
 # 命令退出码 3 = 原地更新失败：把旧数据目录改名备份成 <目录>.bak-时间（不删），再完整重建一次。
 # HEYBE_KEY_SYNC_FORCE=1 时无论指纹如何都跑。结果写在 HEYBE_KEY_SYNC_STATE / HEYBE_KEY_SYNC_BACKUP。
 heybe_key_sync() {
@@ -114,4 +114,17 @@ heybe_key_sync() {
     "$@" || rc=$?
   fi
   return "$rc"
+}
+
+# heybe_t021_smoke_flag：heybe-desktop-dev.sh 调 t021 时给 HEYBE_SKIP_CHAT_SMOKE 的值（打印 1 或 0）。
+# HEYBE_SKIP_CHAT_SMOKE=1 或 HEYBE_SKIP_KEY_TEST=1 → 1：跳过连接测试的人，也不该被 t021 的冒烟测试拦住
+# （测试用法：故意放错 key 去看对话气泡里的提示）。都不设 → 0。
+heybe_t021_smoke_flag() {
+  if [ "${HEYBE_SKIP_CHAT_SMOKE:-0}" = 1 ] || [ "${HEYBE_SKIP_KEY_TEST:-0}" = 1 ]; then echo 1; else echo 0; fi
+}
+
+# heybe_t021_result_code <报告文件>：打印报告里最后一行 "T021 RESULT: … code=…" 的 code（没有则为空）
+heybe_t021_result_code() {
+  [ -f "$1" ] || return 0
+  sed -n 's/^T021 RESULT: .* code=\([^ ]*\).*/\1/p' "$1" | tail -1
 }

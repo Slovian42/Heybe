@@ -9,6 +9,8 @@
 #       两者都不会打印、不写日志、不进报告。
 # 报告：${T021_HOME}/t021-report.txt（可直接回传）；最后一行 "T021 RESULT: ..." 也会打印在终端。
 # 退出码：0 通过；1 失败；3 已有 Agent 但原地更新失败（heybe-desktop-dev.sh 会把数据目录改名备份后重建）。
+# HEYBE_SKIP_CHAT_SMOKE=1：跳过最后的真实对话（冒烟测试），只用于测试（例如故意用错的 key 看桌面端的报错）。默认不跳过。
+# 冒烟测试上游 401 → E_KEY_INVALID；对话失败时删掉 key 指纹，下次会重跑。
 # 兼容 macOS 自带 bash 3.2：路径展开一律 ${VAR}。
 set -euo pipefail
 umask 077
@@ -140,6 +142,17 @@ step_all() {
   ok "依赖已安装"
 
   STEP="chat"
+  # HEYBE_SKIP_CHAT_SMOKE=1：跳过下面这次真实对话（冒烟测试）。只用于测试，比如故意放一个错的 key，
+  # 去看桌面端对话气泡里的错误提示（heybe-desktop-dev.sh 在 HEYBE_SKIP_KEY_TEST=1 时会替你设上）。
+  # 单独跑本脚本时默认照常做冒烟测试。
+  if [ "${HEYBE_SKIP_CHAT_SMOKE:-0}" = 1 ]; then
+    stop_gateway
+    echo "chat_smoke=skipped" >>"${REPORT}"
+    printf '\033[33m跳过\033[0m 已跳过聊天冒烟测试（HEYBE_SKIP_CHAT_SMOKE=1，这是测试用法：不验证 key 能不能对话，错的 key 也会继续）\n'
+    STEP="done"; result PASS smoke_skipped
+    echo "报告：${REPORT}"
+    return 0
+  fi
   local json rc=0 agent_id
   agent_id=$(fc_resolve_agent_id "${PORT}" "${AGENT}" fastclaw 2>/dev/null || true)
   json=$( cd "${REPO_ROOT}" && env -u DEEPSEEK_API_KEY \
@@ -160,8 +173,10 @@ step_all() {
     STEP="done"; ok "流式对话成功：${summary}"; result PASS none
   else
     local code; code=$(printf '%s' "${summary}" | sed -n 's/.*error_code=\([^ ]*\).*/\1/p'); code=${code:-unknown}
+    # 对话没通：删掉刚写的 key 指纹，下次 heybe-desktop-dev.sh 会重新跑 t021，而不是当成“key 没变”直接复用
+    rm -f "$(heybe_key_fp_file "${T021_HOME}")"
     if grep -q 'API error 401' "${T021_HOME}/gateway.log" 2>/dev/null; then
-      die "E_CHAT_${code}" "DeepSeek 拒绝了这个 key（上游 401）：请到 ${POC_ENV} 换成有效的 DEEPSEEK_API_KEY（保持 600），再重跑"
+      die E_KEY_INVALID "DeepSeek 拒绝了这个 key（冒烟测试 E_CHAT_${code}，上游 401）：模型密钥无效，请到 ${POC_ENV} 换成有效的 DEEPSEEK_API_KEY（保持 600），再重跑"
     fi
     die "E_CHAT_${code}" "对话未成功：${summary}"
   fi
