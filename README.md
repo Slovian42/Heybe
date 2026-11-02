@@ -148,7 +148,7 @@ pnpm test      # vitest
 pnpm --filter @heybe/desktop dev   # placeholder UI at http://localhost:1420
 ```
 
-Setting up FastClaw and the sandbox: [docs/phase0-dev-env.md](docs/phase0-dev-env.md), [docs/sandbox-options.md](docs/sandbox-options.md), [docs/poc-boxlite.md](docs/poc-boxlite.md). Never put real keys in files: copy `.env.example` to `.env` (git-ignored) for local values.
+Setting up FastClaw and the sandbox: [docs/phase0-dev-env.md](docs/phase0-dev-env.md), [docs/sandbox-options.md](docs/sandbox-options.md), [docs/poc-boxlite.md](docs/poc-boxlite.md). Desktop app on an Apple Silicon Mac with the BoxLite sandbox: `scripts/dev/heybe-desktop-dev.sh --sandbox boxlite`, then `scripts/dev/product-sandbox-check.sh` in a second terminal (8 checks, prints only counts and PASS/FAIL); details in [docs/t19-desktop-chat.md](docs/t19-desktop-chat.md). Never put real keys in files: copy `.env.example` to `.env` (git-ignored) for local values.
 
 ### Repository layout
 

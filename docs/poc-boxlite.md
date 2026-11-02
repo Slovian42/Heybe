@@ -87,6 +87,10 @@ verify 曾把 `agents init` 的名字 `poc` 直接当 `model` / `agent_id` / `x-
 - Cargo（桌面端编译）：见 `docs/t19-desktop-chat.md`，同样只作用于本次运行，不改 `~/.cargo/config.toml`。
 - 地址都可覆盖：`HEYBE_DOCKER_MIRROR=<前缀>`、`HEYBE_CARGO_MIRROR=<索引>`；`--mirror off` 关掉。实现 `scripts/lib-mirror.sh`，测试 `scripts/mirror-mock-test.sh`。
 
+## 1.4 桌面版用产品代码跑沙箱（#90）
+
+PoC 脚本验证的是 FastClaw + BoxLite 本身；桌面版走产品代码 `services/task-manager/src/sandbox.ts`：`scripts/dev/heybe-desktop-dev.sh --sandbox boxlite`（或设 `HEYBE_BOXLITE_BIN`），默认用本脚本 `install` 装的 `~/.local/opt/boxlite/bin/boxlite`。起来后另开终端跑 `scripts/dev/product-sandbox-check.sh` 做 8 项自检（只打印计数和 PASS/FAIL），见 `docs/t19-desktop-chat.md`。结束本地服务用 `pkill -f 'heybe-role=task-manager'`（argv 里是相对路径 `tsx src/main.ts`，按完整路径匹配不到）。
+
 ## 2. 密钥处理
 
 | 密钥 | 来源 | 存放 | 不会出现在 |

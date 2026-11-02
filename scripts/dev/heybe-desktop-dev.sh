@@ -14,6 +14,12 @@
 #   （${T021_HOME}/deepseek-key.sha256，600，只有哈希）。不一样（或没有指纹，比如 10-29 建的旧目录）就重跑 t021：
 #   带 --id 原地更新 Agent 的 key 并做一次真实对话。原地更新失败时把旧目录改名为 heybe-t021.bak-时间（不删）再重建。
 #   HEYBE_SKIP_KEY_TEST=1 跳过启动时的 DeepSeek 连接测试。
+#   --sandbox boxlite  本地服务按产品代码路径（services/task-manager/src/sandbox.ts）先起 boxlite serve + 强制禁出网的代理，
+#                  再让 gateway 在 BoxLite 沙箱里跑，部署模式 hosted。设了 HEYBE_BOXLITE_BIN 时自动启用；
+#                  默认二进制 ~/.local/opt/boxlite/bin/boxlite（scripts/poc/boxlite-poc.sh install 装的）。
+#   --sandbox off  不用沙箱（即使设了 HEYBE_BOXLITE_BIN）。启动时把沙箱模式、部署模式写到 stderr。
+# 状态目录：${T021_HOME}/service-state（task-manager.pid、service-state.json 只有 pid/端口/模式、sandbox.log 代理日志），
+#   scripts/dev/product-sandbox-check.sh 读它做自检。精确结束本地服务：pkill -f 'heybe-role=task-manager'
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -27,19 +33,26 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 . "$REPO_ROOT/scripts/poc/lib-fc-agent.sh"
 # shellcheck source=../poc/lib-fc-key.sh
 . "$REPO_ROOT/scripts/poc/lib-fc-key.sh"
-CMD="" YES=0 MIRROR="${HEYBE_MIRROR:-}"
+CMD="" YES=0 MIRROR="${HEYBE_MIRROR:-}" SANDBOX=""
 while [ $# -gt 0 ]; do
   case "$1" in
     check) CMD=check ;;
     --yes|-y) YES=1 ;;
     --mirror) [ $# -ge 2 ] || { echo "--mirror 后面要写 cn 或 off" >&2; exit 2; }; MIRROR="$2"; shift ;;
     --mirror=*) MIRROR="${1#--mirror=}" ;;
+    --sandbox) [ $# -ge 2 ] || { echo "--sandbox 后面要写 boxlite 或 off" >&2; exit 2; }; SANDBOX="$2"; shift ;;
+    --sandbox=*) SANDBOX="${1#--sandbox=}" ;;
     -h|--help) awk 'NR > 1 && /^set -euo/ { exit } NR > 1' "$0"; exit 0 ;;
     *) echo "未知参数：${1}（--help 查看用法）" >&2; exit 2 ;;
   esac
   shift
 done
 heybe_mirror_setup "$MIRROR" || exit 2
+case "$SANDBOX" in
+  "") if [ -n "${HEYBE_BOXLITE_BIN:-}" ]; then SANDBOX=boxlite; else SANDBOX=off; fi ;;
+  boxlite|off) ;;
+  *) echo "--sandbox 只能是 boxlite 或 off（收到 ${SANDBOX}）" >&2; exit 2 ;;
+esac
 T021_HOME="${HEYBE_T021_HOME:-$HOME/.local/opt/heybe-t021}"
 FC_HOME="${T021_HOME}/fastclaw-home"
 FC_BIN="${HEYBE_FASTCLAW_BIN:-$HOME/.local/opt/fastclaw/bin/fastclaw}"
@@ -51,7 +64,8 @@ ok() { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 die() { printf '  \033[31m✗ [%s]\033[0m %s\n' "$1" "$2" >&2; exit 1; }
 
-leftovers() { pgrep -fl "fastclaw|services/task-manager/src/main.ts" | grep -v -E "pgrep|heybe-desktop-dev" || true; }
+# 本地服务的 argv 带 --heybe-role=task-manager（package.json start）；旧版本只有相对路径 src/main.ts，也一并匹配
+leftovers() { pgrep -fl "fastclaw|heybe-role=task-manager|tsx src/main.ts|boxlite serve" | grep -v -E "pgrep|heybe-desktop-dev" || true; }
 
 if [ "$CMD" = "check" ]; then
   left="$(leftovers)"
@@ -128,6 +142,18 @@ export HEYBE_FASTCLAW_GATEWAY_BIN="$FC_BIN"
 export FASTCLAW_HOME="$FC_HOME" FASTCLAW_PORT="$PORT"
 export HEYBE_FASTCLAW_BASE_URL="http://127.0.0.1:${PORT}"
 HEYBE_FASTCLAW_CHAT_TOKEN="$(cat "$KEY_FILE")"; export HEYBE_FASTCLAW_CHAT_TOKEN
+
+export HEYBE_SERVICE_STATE_DIR="${T021_HOME}/service-state"
+if [ "$SANDBOX" = boxlite ]; then
+  BOXLITE_BIN="${HEYBE_BOXLITE_BIN:-$HOME/.local/opt/boxlite/bin/boxlite}"
+  [ -x "$BOXLITE_BIN" ] || die E_BOXLITE_BIN "找不到可执行的 boxlite：${BOXLITE_BIN}（先跑 scripts/poc/boxlite-poc.sh install，或 HEYBE_BOXLITE_BIN=/路径/boxlite）"
+  export HEYBE_BOXLITE_BIN="$BOXLITE_BIN"
+  echo "heybe-dev: 沙箱=boxlite（${BOXLITE_BIN}；本地服务起 serve + 代理，代理给每个建箱请求强制 outbound=disabled）部署模式=hosted（只随沙箱设置）" >&2
+else
+  unset HEYBE_BOXLITE_BIN
+  echo "heybe-dev: 沙箱=关（--sandbox boxlite 或设 HEYBE_BOXLITE_BIN 可开启）部署模式=self-hosted" >&2
+fi
+echo "heybe-dev: 启动后本地服务会在下面打印 \"heybe-service: 沙箱=…\" 和 \"heybe-service: camoufox-cli …\" 两行；状态目录 ${HEYBE_SERVICE_STATE_DIR}" >&2
 
 echo "== 启动 Heybe（首次编译 Rust 要几分钟；关窗=隐藏，Cmd+Q=退出）"
 ok "$(heybe_mirror_summary)"

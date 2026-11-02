@@ -50,6 +50,9 @@ Tauri 壳（src-tauri/src/service.rs，Supervisor）
 - 开发版命令：debug 构建用 `pnpm -C services/task-manager start`（tsx）；可用 `HEYBE_SERVICE_CMD` 覆盖。发布版打包成 sidecar 留给 19-h。
 - 一键开发脚本：`scripts/dev/heybe-desktop-dev.sh`（预检 → DeepSeek key 连接测试 → 首次或 key 变了自动跑 `scripts/poc/t021-mac.sh` 准备/更新 FastClaw + DeepSeek Agent → `pnpm install` → Node/better-sqlite3 检查 → `pnpm tauri dev`）；`… check` 检查残留进程。
 - Node 版本：仓库固定 Node 22（`.nvmrc`）。better-sqlite3 是原生模块，按安装时的 Node 编译；换了 Node（例如 Mac 默认变成 v26）会报 `NODE_MODULE_VERSION` 不一致、本地服务起不来。脚本在启动前实际加载一次，不匹配时用中文说明原因，并提示 `nvm use` / `fnm use` 或 `pnpm -r rebuild better-sqlite3`；交互终端会先问，加 `--yes` 直接重建。`providers-mac-check.sh` 同样检查。
+- 沙箱（#90）：`scripts/dev/heybe-desktop-dev.sh --sandbox boxlite`（设了 `HEYBE_BOXLITE_BIN` 时自动开启，`--sandbox off` 强制关）走产品代码路径 `services/task-manager/src/sandbox.ts`：本地服务先起 `boxlite serve`（随机 key，只在内存）和强制 `outbound=disabled` 的代理，再让 gateway 以部署模式 hosted 在 BoxLite 沙箱里跑。启动时 stderr 依次出现 `heybe-dev: 沙箱=… 部署模式=…`、`heybe-service: 沙箱=boxlite（FastClaw 127.0.0.1:G → 代理 127.0.0.1:P，强制 outbound=disabled → serve 127.0.0.1:S）部署模式=hosted`、`heybe-service: camoufox-cli 技能已关闭（读回 …=false，agent …）`，代理日志以 `heybe-sandbox:` 开头。
+  - 状态目录 `~/.local/opt/heybe-t021/service-state`（`HEYBE_SERVICE_STATE_DIR`，700）：`task-manager.pid`、`service-state.json`（只有 pid、端口、模式）、`sandbox.log`（代理日志），都是 600，不含密钥；正常退出时删 pid/json，保留日志。
+  - 自检：另开终端跑 `scripts/dev/product-sandbox-check.sh`，8 项只打印计数和 PASS/FAIL（401、只监听 127.0.0.1、代理强制禁出网、hosted、无 FASTCLAW_ALLOW_HOST_EXEC、camoufox 读回 false、一次 /v1 对话里 exec 出网全部 NET_BLOCKED、ps argv 密钥命中 0）。测试 `scripts/dev/product-sandbox-check-mock-test.sh`。
 - 国内镜像（可选，默认关）：`scripts/dev/heybe-desktop-dev.sh --mirror cn`（或 `HEYBE_MIRROR=cn`）让这次编译的 crates.io 走 `sparse+https://rsproxy.cn/index/`，`HEYBE_CARGO_MIRROR=<索引地址>` 可换成别的镜像。实现是给这次的 `cargo run` 传 `--config source.crates-io.replace-with=…`（经 `pnpm tauri dev -- <参数>`），并在本进程设 `CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse`，**不改 `~/.cargo/config.toml`**，也不需要在仓库里放 `.cargo/config.toml`（之前手工放的可以删掉）。见 `scripts/lib-mirror.sh`，测试 `scripts/mirror-mock-test.sh`。
 
 - 图标：`apps/desktop/src-tauri/icons/` 目前是**占位图标**（纯色底 + H，RGBA），正式图标由品牌方提供后覆盖同名文件（见该目录 `README.md`）。缺图标时 `generate_context!` 编译期 panic，`apps/desktop/test/icons.test.ts` 检查 `tauri.conf.json` 引用的图标都在。
@@ -151,7 +154,7 @@ level=WARN msg="no provider configured: default model is missing the '<provider>
    - 成功标准：回答逐字流出，结束后不再闪光标；再问“我刚才让你做什么？”能答出上一轮内容（同一会话）。
 4. 停止：问一个长问题（“写一篇 800 字的文章”），流出一半点“停止”。
    - 成功标准：立即停住，显示“已停止（服务端是否停止未知）”；还能继续发下一条。
-5. 崩溃重启：另开终端执行 `pkill -9 -f services/task-manager/src/main.ts`。
+5. 崩溃重启：另开终端执行 `pkill -9 -f 'heybe-role=task-manager'`（本地服务的 argv 是相对路径 `tsx src/main.ts`，按 `services/task-manager/src/main.ts` 匹配不到；`pnpm start` 现在带标记 `--heybe-role=task-manager`，同时命中 tsx 和它的 node 子进程）。只杀 node 进程也可以：`kill -9 "$(cat ~/.local/opt/heybe-t021/service-state/task-manager.pid)"`。
    - 成功标准：窗口出现“本地服务断开，正在重连…”，10 秒内消失；再发一条消息能正常回答。
 6. 关窗与退出：点窗口左上角红色关闭 → 窗口消失但 Dock 图标还在；点 Dock 图标 → 窗口回来，聊天记录还在。然后按 Cmd+Q。
    - 成功标准：终端里 `pnpm tauri dev` 结束；再执行 `scripts/dev/heybe-desktop-dev.sh check` 输出 `✓ 没有残留进程，端口 18963 已释放`。
