@@ -9,13 +9,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@heybe/shared-types": "workspace:*",
     "@heybe/fastclaw-adapter": "workspace:*",
+    "@heybe/shared-types": "workspace:*",
     "better-sqlite3": "^11.5.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
-    "@types/node": "^20.17.6"
+    "@types/node": "^20.17.6",
+    "tsx": "^4.23.15"
   },
   "license": "Apache-2.0"
 }

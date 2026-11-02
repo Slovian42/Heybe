@@ -68,3 +68,26 @@ export {
   saveArtifact,
   type SavedArtifact,
 } from "./artifacts.js";
+export { MacKeychainSecretStore, MemorySecretStore, keyStatus, keychainAddCommand, type SecretStore, type SecurityRun } from "./provider-secrets.js";
+export { classifyProviderError, providerMessage, type ClassifiedProviderError } from "./provider-errors.js";
+export {
+  FastClawCliProvisioner,
+  PROVIDER_KEY_ENV,
+  initArgs,
+  parseAgentId,
+  parseExistingId,
+  probeAgentName,
+  type CliRunner,
+  type ProviderProvisioner,
+} from "./provider-provisioner.js";
+export {
+  OLLAMA_MIN_CTX,
+  PROBE_PROMPT,
+  ollamaContext,
+  ollamaRoot,
+  testProviderConnection,
+  type FetchLike,
+  type ProbeChat,
+  type TestDeps,
+} from "./provider-connection.js";
+export { handleProviderRoute, type ProviderHttpDeps } from "./provider-http.js";
