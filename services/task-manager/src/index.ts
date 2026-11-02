@@ -25,7 +25,7 @@ export {
   type ClaimedWork,
 } from "./claim.js";
 export { MockExecutor, dispatchOnce, type DispatchOnceResult } from "./dispatch.js";
-export { startTaskHttpServer, stopTaskHttpServer, type TaskHttpOptions } from "./http.js";
+export { startTaskHttpServer, stopTaskHttpServer, tokenMatches, type TaskHttpOptions } from "./http.js";
 export { startDispatchLoop, type DispatchLoop, type DispatchLoopOptions } from "./scheduler.js";
 export { DEFAULT_LEASE_MS, DEFAULT_WORKER_SLOTS, LOOPBACK_HOST } from "./constants.js";
 export {
@@ -68,6 +68,27 @@ export {
   saveArtifact,
   type SavedArtifact,
 } from "./artifacts.js";
+export {
+  CHAT_ALLOWED_ORIGINS,
+  CHAT_PATH,
+  corsHeaders,
+  fastClawChatStream,
+  chatSessionKey,
+  classifyChatError,
+  handleChatMessage,
+  toServiceEvent,
+  type ChatStreamFn,
+  type ChatStreamInput,
+} from "./chat.js";
+export { startGateway, type GatewayHandle, type GatewayOptions } from "./gateway.js";
+export {
+  MIN_TOKEN_LENGTH,
+  READY_PREFIX,
+  chatFromEnv,
+  startHeybeService,
+  type HeybeService,
+  type ServiceDeps,
+} from "./service.js";
 export { MacKeychainSecretStore, MemorySecretStore, keyStatus, keychainAddCommand, type SecretStore, type SecurityRun } from "./provider-secrets.js";
 export { classifyProviderError, providerMessage, type ClassifiedProviderError } from "./provider-errors.js";
 export {

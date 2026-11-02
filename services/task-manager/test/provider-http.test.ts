@@ -52,6 +52,31 @@ describe("/providers routes", () => {
   });
 });
 
+describe("/providers routes behind the 19-b startup token", () => {
+  it("401 without/with wrong Bearer, 200 with the right one", async () => {
+    const TOKEN = "t".repeat(40);
+    const db = new Database(":memory:");
+    migrate(db);
+    const s = await startTaskHttpServer(db, {
+      token: TOKEN,
+      providers: { secrets: new MemorySecretStore(), test: async () => { throw new Error("unused"); } },
+    });
+    const a = s.address();
+    const url = `http://127.0.0.1:${typeof a === "object" && a ? a.port : 0}/providers/keys/heybe.provider.x`;
+    try {
+      expect((await fetch(url)).status).toBe(401);
+      expect((await fetch(url, { headers: { authorization: "Bearer wrong" } })).status).toBe(401);
+      const put = await fetch(url, { method: "PUT", body: JSON.stringify({ value: KEY }) });
+      expect(put.status).toBe(401);
+      const ok = await fetch(url, { headers: { authorization: `Bearer ${TOKEN}` } });
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toEqual({ set: false });
+    } finally {
+      await stopTaskHttpServer(s);
+    }
+  });
+});
+
 describe("scripts/dev/providers-mac-check.sh --mock", () => {
   it("dry run passes and prints no key", () => {
     const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");

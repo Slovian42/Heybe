@@ -10,8 +10,23 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "title": "Heybe", "width": 1100, "height": 760 }],
-    "security": { "csp": null }
+    "windows": [
+      {
+        "label": "main",
+        "title": "Heybe",
+        "width": 1100,
+        "height": 760
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:*; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+    }
   },
-  "bundle": { "active": false, "targets": ["dmg", "app"] }
+  "bundle": {
+    "active": false,
+    "targets": [
+      "dmg",
+      "app"
+    ]
+  }
 }

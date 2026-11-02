@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
@@ -5,6 +6,7 @@ import type Database from "better-sqlite3";
 import type { Budget } from "@heybe/shared-types";
 import type { CreateNodeInput, CreateTaskInput } from "@heybe/shared-types/task-manager";
 
+import { CHAT_PATH, corsHeaders, handleChatMessage, type ChatStreamFn } from "./chat.js";
 import { LOOPBACK_HOST } from "./constants.js";
 import {
   ConflictError,
@@ -171,8 +173,23 @@ export interface TaskHttpOptions {
    * (e.g. FastClawNodeExecutor.abortTask) and return how many were aborted.
    */
   onCancel?: (taskId: string) => number;
+  /** Enables POST /chat/sessions/:id/messages (SSE). Omit to keep chat off. */
+  chat?: ChatStreamFn;
+  /**
+   * Startup token (19-b). When set, every route except GET /health and CORS
+   * preflight needs `Authorization: Bearer <token>`. Never logged.
+   */
+  token?: string;
   /** Enables /providers/* routes (#16). Absent → those paths 404. */
   providers?: ProviderHttpDeps;
+}
+
+export function tokenMatches(header: string | string[] | undefined, token: string): boolean {
+  const raw = Array.isArray(header) ? header[0] : header;
+  if (!raw?.startsWith("Bearer ")) return false;
+  const got = Buffer.from(raw.slice(7));
+  const want = Buffer.from(token);
+  return got.length === want.length && timingSafeEqual(got, want);
 }
 
 async function handle(
@@ -187,6 +204,29 @@ async function handle(
   const nodes = new NodeRepository(db);
   const events = new EventRepository(db);
 
+  if (method === "GET" && url.pathname === "/health") {
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+  const chat = CHAT_PATH.exec(url.pathname);
+  if (chat && opts.chat && method === "OPTIONS") {
+    res.writeHead(204, corsHeaders(req.headers.origin));
+    res.end();
+    return;
+  }
+  if (opts.token && !tokenMatches(req.headers.authorization, opts.token)) {
+    res.writeHead(401, { ...corsHeaders(req.headers.origin), "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({ error: "unauthorized" }));
+    return;
+  }
+  if (chat && opts.chat) {
+    if (method !== "POST") {
+      sendJson(res, 405, { error: "method not allowed" });
+      return;
+    }
+    await handleChatMessage(req, res, chat[1] ?? "", await readBody(req), opts.chat);
+    return;
+  }
   if (opts.providers && url.pathname.startsWith("/providers/")) {
     const body = method === "GET" || method === "DELETE" ? undefined : await readBody(req);
     const out = await handleProviderRoute(opts.providers, method, url.pathname, body);

@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./pro-interface": "./src/pro-interface.ts",
-    "./task-manager": "./src/task-manager.ts"
+    "./task-manager": "./src/task-manager.ts",
+    "./chat": "./src/chat.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

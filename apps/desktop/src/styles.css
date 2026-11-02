@@ -1,0 +1,13 @@
+body { margin: 0; font-family: Inter, -apple-system, sans-serif; }
+.app { display: flex; flex-direction: column; height: 100vh; padding: 16px; box-sizing: border-box; }
+.messages { flex: 1; overflow-y: auto; }
+.msg { margin: 8px 0; padding: 8px 12px; border-radius: 8px; max-width: 80%; }
+.msg.user { background: #e8f0fe; margin-left: auto; }
+.msg.assistant { background: #f4f4f5; }
+.text { white-space: pre-wrap; word-break: break-word; }
+.status { color: #b45309; font-size: 12px; margin-top: 4px; }
+.tools .warn { color: #b91c1c; font-weight: 600; }
+.hint { color: #6b7280; font-size: 12px; }
+.composer { display: flex; gap: 8px; }
+.composer textarea { flex: 1; }
+.banner { background: #fef3c7; color: #92400e; padding: 6px 10px; border-radius: 6px; font-size: 13px; }
