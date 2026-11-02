@@ -10,6 +10,7 @@ import {
 import type { V1TurnFile } from "@heybe/shared-types";
 
 import { ArtifactError, saveArtifact } from "./artifacts.js";
+import { recordArtifact } from "./review.js";
 import { insertEvent } from "./events.js";
 import { cancelTask, type CancelTaskOptions } from "./tasks.js";
 import { isoNow } from "./time.js";
@@ -86,7 +87,7 @@ export interface FastClawNodeExecutorOptions {
 }
 
 export interface ArtifactCollectOptions {
-  /** Local output root; files go to `<root>/<taskId>/<name>`. */
+  /** Local output root; files go to `<root>/<taskId>/<attemptId>/<name>` (#23). */
   root: string;
   /** File names this node must produce (e.g. ["report.md"]). Empty → nothing collected. */
   expected: (request: ExecutionRequest) => readonly string[];
@@ -268,15 +269,17 @@ export class FastClawNodeExecutor implements NodeExecutor {
         const saved = saveArtifact({
           root: opts.root,
           taskId: request.taskId,
+          attemptId: request.attemptId,
           name,
           bytes: download.bytes,
           contentType: download.contentType ?? file.content_type ?? null,
           maxBytes: opts.maxBytes,
         });
+        recordArtifact(this.db, { ...base, path: saved.path, sha256: saved.sha256, now: this.#now() });
         insertEvent(this.db, {
           ...base,
           type: FastClawEventType.ArtifactSaved,
-          data: { name: saved.name, size: saved.size, path: saved.path, contentType: saved.contentType },
+          data: { name: saved.name, size: saved.size, path: saved.path, contentType: saved.contentType, sha256: saved.sha256 },
           at: this.#now(),
         });
       } catch (err) {
