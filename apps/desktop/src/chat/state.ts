@@ -1,4 +1,4 @@
-import type { ChatServiceEvent } from "@heybe/shared-types/chat";
+import { FASTCLAW_ALERT_TOOLS, type ChatServiceEvent } from "@heybe/shared-types/chat";
 
 export type MessageStatus = "streaming" | "done" | "stopped" | "interrupted" | "failed" | "unavailable";
 
@@ -30,8 +30,11 @@ export type ChatAction =
 
 export const initialChatState: ChatState = { messages: [], stoppedBefore: false };
 
-/** Tools that touch the network or host; shown with a warning (#67 list). */
-export const WARN_TOOLS = new Set(["web_fetch", "exec", "shell", "write_file", "edit_file"]);
+/**
+ * Tools shown with a warning: same list the task manager alerts on
+ * (#67 Agent-management tools + docs/t043 §3 cron tools; see shared-types/chat.ts).
+ */
+export const WARN_TOOLS: ReadonlySet<string> = new Set(FASTCLAW_ALERT_TOOLS);
 
 export const STATUS_TEXT: Record<MessageStatus, string> = {
   streaming: "",

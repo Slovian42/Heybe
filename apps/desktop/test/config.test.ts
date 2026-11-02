@@ -2,16 +2,31 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_SERVICE_URL, serviceUrl } from "../src/config";
+import { loadServiceInfo, loopbackUrl } from "../src/config";
 
 const conf = JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"));
 const caps = JSON.parse(readFileSync(new URL("../src-tauri/capabilities/default.json", import.meta.url), "utf8"));
 
-describe("service URL", () => {
+describe("service info (19-b)", () => {
   it("only accepts loopback http", () => {
-    expect(serviceUrl("http://127.0.0.1:4000/")).toBe("http://127.0.0.1:4000");
-    expect(serviceUrl("https://evil.example")).toBe(DEFAULT_SERVICE_URL);
-    expect(serviceUrl("http://localhost:4000")).toBe(DEFAULT_SERVICE_URL);
+    expect(loopbackUrl("http://127.0.0.1:4000/")).toBe("http://127.0.0.1:4000");
+    expect(loopbackUrl("https://evil.example")).toBeNull();
+    expect(loopbackUrl("http://localhost:4000")).toBeNull();
+  });
+  it("reads url + token from the Tauri service_info command", async () => {
+    const invoke = async (cmd: string) => {
+      expect(cmd).toBe("service_info");
+      return { status: "ready", url: "http://127.0.0.1:5555", token: "tok", restarts: 1 };
+    };
+    expect(await loadServiceInfo(invoke)).toEqual({ status: "ready", url: "http://127.0.0.1:5555", token: "tok", restarts: 1 });
+  });
+  it("hides the url while reconnecting and rejects non-loopback urls", async () => {
+    expect((await loadServiceInfo(async () => ({ status: "reconnecting", url: "http://127.0.0.1:1", token: "t" }))).url).toBeNull();
+    expect((await loadServiceInfo(async () => ({ status: "ready", url: "http://evil.example:80", token: "t" }))).url).toBeNull();
+  });
+  it("falls back to VITE_* env outside Tauri", async () => {
+    const info = await loadServiceInfo(undefined, { VITE_HEYBE_SERVICE_URL: "http://127.0.0.1:7000", VITE_HEYBE_SERVICE_TOKEN: "x" });
+    expect(info).toMatchObject({ status: "ready", url: "http://127.0.0.1:7000", token: "x" });
   });
 });
 

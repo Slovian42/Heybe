@@ -35,3 +35,16 @@ describe("chatReducer", () => {
     expect(a1(s).text).toBe("<img src=x onerror=alert(1)>");
   });
 });
+
+import { FASTCLAW_ALERT_TOOLS } from "@heybe/shared-types/chat";
+import { WARN_TOOLS } from "../src/chat/state";
+
+describe("WARN_TOOLS (#67)", () => {
+  it("matches the #67 Agent-management list plus the t043 cron tools", () => {
+    expect([...WARN_TOOLS].sort()).toEqual([...FASTCLAW_ALERT_TOOLS].sort());
+    for (const t of ["create_agent", "configure_agent", "check_agent", "delete_agent", "spawn_subagent", "delegate_task", "install_skill", "create_cron_job", "delete_cron_job"]) {
+      expect(WARN_TOOLS.has(t)).toBe(true);
+    }
+    expect(WARN_TOOLS.has("web_fetch")).toBe(false);
+  });
+});

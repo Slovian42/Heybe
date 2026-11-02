@@ -1,8 +1,9 @@
-import { useCallback, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 import { streamChat } from "./chat/client";
 import { STATUS_TEXT, WARN_TOOLS, chatReducer, initialChatState, type ChatMessage } from "./chat/state";
-import { serviceUrl } from "./config";
+import { STATUS_BANNER, inTauri, loadServiceInfo, type ServiceInfo } from "./config";
 
 // The UI talks only to the local Heybe service, never to FastClaw's web/ console.
 const SESSION_ID = crypto.randomUUID();
@@ -37,24 +38,45 @@ export function App() {
   const [input, setInput] = useState("");
   const running = useRef<{ id: string; ctl: AbortController } | null>(null);
   const busy = state.messages.some((m) => m.status === "streaming");
+  const [service, setService] = useState<ServiceInfo>({ status: "starting", url: null, token: "", restarts: 0 });
+
+  // 19-b: poll the shell for the service URL/token; shows "正在重连" while it restarts.
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try {
+        const info = await loadServiceInfo(inTauri() ? (cmd) => invoke(cmd) : undefined);
+        if (alive) setService(info);
+      } catch {
+        if (alive) setService((s) => ({ ...s, status: "failed", url: null }));
+      }
+    };
+    void tick();
+    const t = setInterval(() => void tick(), 1000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
 
   const send = useCallback(async () => {
     const content = input.trim();
-    if (!content || running.current) return;
+    if (!content || running.current || !service.url) return;
+    const baseUrl = service.url;
     setInput("");
     const assistantId = nextId();
     const ctl = new AbortController();
     running.current = { id: assistantId, ctl };
     dispatch({ type: "send", userId: nextId(), assistantId, content });
     try {
-      for await (const event of streamChat({ baseUrl: serviceUrl(), sessionId: SESSION_ID, content, signal: ctl.signal })) {
+      for await (const event of streamChat({ baseUrl, token: service.token, sessionId: SESSION_ID, content, signal: ctl.signal })) {
         dispatch({ type: "event", assistantId, event });
       }
     } finally {
       if (!ctl.signal.aborted) dispatch({ type: "end", assistantId });
       running.current = null;
     }
-  }, [input]);
+  }, [input, service]);
 
   const stop = useCallback(() => {
     const cur = running.current;
@@ -69,6 +91,7 @@ export function App() {
         <h1>Heybe</h1>
         <p>说一句，剩下的交给它。</p>
       </header>
+      {STATUS_BANNER[service.status] && <p className="banner" data-status={service.status}>{STATUS_BANNER[service.status]}</p>}
       <section className="messages">
         {state.messages.map((m) => (
           <Message key={m.id} m={m} />
@@ -88,7 +111,7 @@ export function App() {
         {busy ? (
           <button type="button" onClick={stop}>停止</button>
         ) : (
-          <button type="submit" disabled={!input.trim()}>发送</button>
+          <button type="submit" disabled={!input.trim() || !service.url}>发送</button>
         )}
       </form>
     </main>

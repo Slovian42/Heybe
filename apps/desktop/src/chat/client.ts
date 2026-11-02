@@ -4,6 +4,8 @@ import { parseServiceSse, StreamTruncatedError } from "./sse";
 
 export interface StreamChatInput {
   baseUrl: string;
+  /** Startup token from service_info; sent as Bearer. */
+  token: string;
   sessionId: string;
   content: string;
   signal?: AbortSignal;
@@ -22,7 +24,11 @@ export async function* streamChat(input: StreamChatInput): AsyncGenerator<ChatSe
   try {
     res = await doFetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "text/event-stream" },
+      headers: {
+        "content-type": "application/json",
+        accept: "text/event-stream",
+        authorization: `Bearer ${input.token}`,
+      },
       body: JSON.stringify({ content: input.content }),
       signal: input.signal,
     });

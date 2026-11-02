@@ -21,3 +21,23 @@ export interface ChatSendRequest {
 }
 
 export const CHAT_SESSION_KEY_PREFIX = "heybe:chat:";
+
+/**
+ * Tool names that must be flagged to the user (single source for UI and task manager).
+ * Source: PR/issue #67 (Agent-management tools, verified on FastClaw v1.4.0 b5ad3dff):
+ *   create_agent, configure_agent, check_agent, delete_agent, spawn_subagent, delegate_task, install_skill.
+ * Plus scheduling tools from docs/t043 §3 (Heybe's task manager must stay the only timer):
+ *   create_cron_job, delete_cron_job.
+ * `delete_agent` does not exist in v1.4.0; listed in case a later version adds it.
+ */
+export const FASTCLAW_ALERT_TOOLS = [
+  "create_agent",
+  "configure_agent",
+  "check_agent",
+  "delete_agent",
+  "spawn_subagent",
+  "delegate_task",
+  "install_skill",
+  "create_cron_job",
+  "delete_cron_job",
+] as const;
