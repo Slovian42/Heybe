@@ -31,6 +31,7 @@ hex() { python3 -c 'import secrets;print(secrets.token_hex(6))'; }
 if [ "$(cat "$POC_HOME/fastclaw.backend" 2>/dev/null)" != boxlite ]; then
   [ "${T032_NO_START:-0}" = 1 ] && { echo "FAIL 当前没有 boxlite 版 FastClaw（T032_NO_START=1）" >&2; exit 1; }
   info "当前 FastClaw 不是 boxlite 后端，用 boxlite-poc.sh 重启 boxlite 版"
+  "$SCRIPT_DIR/boxlite-poc.sh" cleanup-fastclaw   # 停掉 docker 版，否则端口被占
   "$SCRIPT_DIR/boxlite-poc.sh" serve
   "$SCRIPT_DIR/boxlite-poc.sh" fastclaw-boxlite
 fi
