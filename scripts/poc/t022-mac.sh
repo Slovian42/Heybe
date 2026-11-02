@@ -9,7 +9,9 @@
 #   cleanup      停 gateway 和本脚本起的 ollama；PURGE=1 时再删除 ${T022_HOME}（含 apikey 文件；不删已下载的模型）
 # 环境变量：HEYBE_T022_MODEL（默认 qwen2.5:3b）、HEYBE_T022_PORT（默认 18973）、HEYBE_T022_HOME、
 #           HEYBE_T022_OLLAMA_HOST（默认 127.0.0.1:11435，本脚本自己起的 ollama serve，不碰 Ollama.app 的 11434）、
-#           HEYBE_T022_NUM_CTX（默认 16384）、HEYBE_T022_SKIP_OFFLINE_CHECK=1（不等断网，报告记 offline=false）
+#           HEYBE_T022_NUM_CTX（默认 16384）、HEYBE_T022_SKIP_OFFLINE_CHECK=1（不等断网，报告记 offline=false）、
+#           HEYBE_OFFLINE_WAIT_SECS（等断网最多几秒，默认 600）、HEYBE_OFFLINE_POLL_SECS（检查间隔，默认 10）
+# 等断网：每 10 秒自动检查，一断网就继续；有终端时按回车可立刻检查；没终端（如 ssh 管道、nohup）也照样等，不再 60 秒×3 就失败。
 # 为什么自己起 ollama serve：FastClaw 每轮发给模型的系统提示+工具定义约 1.1 万 token，Ollama 默认上下文只有 2k–4k，
 #   会把前面截掉（含上一轮对话）。只有 serve 进程的 OLLAMA_CONTEXT_LENGTH 能调大（/v1 请求里没法传 num_ctx）。
 # 密钥：不需要任何云端密钥。FastClaw apikey 自动生成，只写 600 文件；agents init 输出（可能含管理员密码）不显示不落盘。
@@ -23,6 +25,8 @@ TSX_VERSION="4.19.2"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=lib-fc-env.sh
 . "${REPO_ROOT}/scripts/poc/lib-fc-env.sh"
+# shellcheck source=lib-offline-wait.sh
+. "${REPO_ROOT}/scripts/poc/lib-offline-wait.sh"
 T022_HOME="${HEYBE_T022_HOME:-${HOME}/.local/opt/heybe-t022}"
 FC_HOME="${T022_HOME}/fastclaw-home"
 FC_BIN_DIR="${HOME}/.local/opt/fastclaw/bin"           # 与 t021 / boxlite-poc.sh 共用安装位置
@@ -218,19 +222,10 @@ wait_offline() {
     note "已跳过断网检测（HEYBE_T022_SKIP_OFFLINE_CHECK=1），offline=${OFFLINE}；这次结果不能算 #5 验收"
     return 0
   fi
-  local tries=0
-  while is_online; do
-    tries=$((tries + 1))
-    [ "${tries}" -le 3 ] || { OFFLINE=false; OFFLINE_CHECK=failed; die E_STILL_ONLINE "仍能访问外网（请关 Wi-Fi、拔网线、关手机热点/VPN 后用 chat 子命令重跑）"; }
-    printf '\n\033[1m>>> 现在请断网：点屏幕右上角 Wi-Fi 图标把 Wi-Fi 关掉（插网线的把网线拔掉）。\033[0m\n'
-    if [ -r /dev/tty ] && { : </dev/tty; } 2>/dev/null; then
-      printf '>>> 断好后按回车继续（第 %s/3 次检查）… ' "${tries}"
-      read -r _ </dev/tty || true
-    else
-      printf '>>> 没有交互终端，60 秒后再检查（第 %s/3 次）…\n' "${tries}"
-      sleep 60
-    fi
-  done
+  if ! heybe_wait_offline; then
+    OFFLINE=false; OFFLINE_CHECK=failed
+    die E_STILL_ONLINE "等到上限仍能访问外网（请关 Wi-Fi、拔网线、关手机热点/VPN 后用 chat 子命令重跑；HEYBE_OFFLINE_WAIT_SECS 可加长等待）"
+  fi
   OFFLINE=true; OFFLINE_CHECK="done"
   ok "外网已不可达（offline=true），以下全部在断网状态下进行"
 }

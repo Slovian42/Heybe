@@ -28,8 +28,8 @@ FastClaw 每轮发给模型的系统提示和工具说明约 1.1 万 token，而
 ```bash
 cd ~/heybe-poc && scripts/poc/t022-mac.sh all
 ```
-先联网下载 `qwen2.5:3b`（约 2 GB）、起 FastClaw、装依赖，看到 `>>> 现在请断网……按回车继续` 时：关 Wi-Fi（网线、热点、VPN 也断开），回终端按回车。
-成功：`通过 外网已不可达（offline=true）`、3 行 `turn=… stream_ok=true`，最后 `T022 RESULT: PASS step=done code=none`。M3 上每轮首字十几到几十秒属正常。
+先联网下载 `qwen2.5:3b`（约 2 GB）、起 FastClaw、装依赖，看到 `>>> 现在请断网……` 时：关 Wi-Fi（网线、热点、VPN 也断开）。脚本每 10 秒自动检查一次，一断网就继续（不用回终端；按回车可立刻检查）。最多等 600 秒，`HEYBE_OFFLINE_WAIT_SECS=1200` 可加长，`HEYBE_OFFLINE_POLL_SECS` 改检查间隔；没有交互终端（ssh 管道、nohup）时同样自动等。
+成功：`通过 外网已不可达（offline=true）`、3 行 `turn=… stream_ok=true`，最后 `T022 RESULT: PASS step=done code=none`。M3 上每轮首字十几到几十秒属正常（2026-11-02 复验 42–76 s，当时负载约 11、Lima VM 在跑；空闲时会更快）。
 
 **4. 回传并恢复网络**
 ```bash
