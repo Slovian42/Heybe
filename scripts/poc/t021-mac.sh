@@ -92,8 +92,8 @@ step_all() {
   stop_gateway
   if curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz"; then die E_PORT_BUSY "端口 ${PORT} 已被占用（可设 HEYBE_T021_PORT 换端口）"; fi
   # gateway 只拿白名单环境变量（不含 DEEPSEEK_API_KEY；MCP/插件会继承 gateway 的环境）
-  fc_env_bg "${PID_FILE}" "" nohup fastclaw >"${T021_HOME}/gateway.log" 2>&1
-  local i; for i in $(seq 1 30); do curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz" && break; sleep 1; done
+  fc_env_bg "${PID_FILE}" "" nohup fastclaw gateway --port "${PORT}" >"${T021_HOME}/gateway.log" 2>&1
+  for _ in $(seq 1 30); do curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz" && break; sleep 1; done
   curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz" || die E_GATEWAY "FastClaw 30 秒内没起来"
   ok "FastClaw gateway 已在 127.0.0.1:${PORT} 启动（独立数据目录）"
 
@@ -101,6 +101,7 @@ step_all() {
   # init 输出可能含自动生成的控制台密码：只留在内存，不落盘；key 只传给这一次 init
   local init_out init_rc=0
   init_out=$(fc_env_exec DEEPSEEK_API_KEY fastclaw agents init "${AGENT}" --provider deepseek --model "${MODEL}" --api-key-env DEEPSEEK_API_KEY 2>&1) || init_rc=$?
+  # shellcheck disable=SC2034 # 故意清空：密码不留在变量里
   init_out=""
   unset DEEPSEEK_API_KEY
   fc_lock_home "${FC_HOME}"

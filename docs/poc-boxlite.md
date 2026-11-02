@@ -16,7 +16,7 @@
 | FastClaw 请求路径 = `URL + /{prefix}/boxes…`，exec 结果走 `GET …/executions/{id}/attach` WebSocket | `FC:internal/sandbox/boxlite_executor.go`（`prefixPath`、`attachWebsocketURL`） |
 | 创建 box 只发 `{"image","auto_remove":true}`，**不带 allow_net、不挂载宿主目录**；默认镜像 `thinkany/fastclaw-sandbox:latest` | `FC:internal/sandbox/boxlite_executor.go`（`createBox`、常量） |
 | `FASTCLAW_SANDBOX_ENABLED`/`_ENFORCE`/`_BACKEND`；设置 BACKEND 会隐含 ENABLED | `FC:internal/config/env.go:120-127`；`FC:internal/buildinfo/buildinfo.go` |
-| gateway 默认端口 18953（`FASTCLAW_PORT`），`fastclaw` 无子命令即启动 gateway | `FC:internal/config/env.go:34`；`FC:cmd/fastclaw/main.go:127` |
+| gateway 默认端口 18953（`FASTCLAW_PORT`）。**一律用 `fastclaw gateway --port N` 前台启动**：无子命令的 `fastclaw` 只有在 stdin/stdout 都不是字符设备时才起 gateway，否则进聊天 TUI（先 `daemon.Start` 拉起后台 daemon，再打开 `/dev/tty`）；`/dev/null` 也算字符设备，所以无 TTY 时会报 `could not open a new TTY` | `FC:internal/config/env.go:34`；`FC:cmd/fastclaw/main.go`（root `RunE`、`gatewayCmd`）；`FC:cmd/fastclaw/cmd_chat.go`（`isInteractiveTerminal`、`runChat`、`ensureGateway`） |
 | `/v1/chat/completions` 选 Agent：body `agent_id` 或 header `x-fastclaw-agent-id`；apikey 用 Bearer | `FC:internal/api/openai.go:28-40,363`；`FC:internal/api/server.go` |
 | DeepSeek 密钥变量名 `DEEPSEEK_API_KEY` | `FC:internal/provider/credentials.go:165` |
 | docker 后端调用 `docker` CLI 并继承环境变量 → `DOCKER_HOST` 生效（源码推断） | `FC:internal/sandbox/docker.go` |
@@ -66,6 +66,26 @@ limactl delete -f heybe-poc 2>/dev/null || true
 LIMA_START_TIMEOUT=45m scripts/poc/boxlite-poc.sh all
 # 回传：~/.local/opt/heybe-poc/report.md（已脱敏）
 ```
+
+## 1.2 /v1 用 Agent id，不用名字（2026-11-02 Mac 实测）
+
+verify 曾把 `agents init` 的名字 `poc` 直接当 `model` / `agent_id` / `x-fastclaw-agent-id` 发给 `/v1/chat/completions`，FastClaw v1.4.0 返回 `404 agent_not_found`（`/v1` 只认 `agt_…` id，见 `docs/interface-verification.md`「指定 Agent」）。现在 `boxlite-poc.sh verify` 与 `t032-runtime-checks.sh` 先查 id（`scripts/poc/lib-fc-agent.sh`）：
+
+1. `HEYBE_POC_AGENT=agt_…`：手动指定，直接用（排查时覆盖）；
+2. `GET /v1/agents`（Bearer apikey，翻页），`display_name` 等于名字的那一个（同名取最新）；
+3. `fastclaw agents list`（该后端的 `FASTCLAW_HOME`），名字所在行的 `agt_…`；
+4. `setup` 时从 `agents init` 输出记下的 id：`~/.local/opt/heybe-poc/<backend>/agent-id`（600；init 输出里的管理员密码不落盘）。
+
+名字默认 `poc`，可用 `HEYBE_POC_AGENT_NAME` 改；`HEYBE_POC_AGENT` 写成不带 `agt_` 的值时按名字处理（兼容旧用法）。报告里会记一行 `[<backend>] agent_id=agt_…`。干跑测试：`scripts/poc/fc-agent-mock-test.sh`、`scripts/poc/t032-mock-test.sh`（假 FastClaw 收到名字会回 404）。
+
+## 1.3 国内镜像（可选，默认关闭）
+
+`--mirror cn`（可写在任意位置，如 `scripts/poc/boxlite-poc.sh rerun-lima --mirror cn`）或 `HEYBE_MIRROR=cn`：
+
+- Docker：lima 组拉 `thinkany/fastclaw-sandbox` 时先拉 `${HEYBE_DOCKER_MIRROR}/thinkany/fastclaw-sandbox:latest`（cn 默认前缀 `docker.m.daocloud.io`），再 `docker tag` 回原名，失败自动回退直接拉。**不改 Docker daemon 配置**；拉取失败时只打印 `registry-mirrors` 的手动设置方法。
+- BoxLite 由 `boxlite serve` 自己拉镜像，不受这个开关影响。
+- Cargo（桌面端编译）：见 `docs/t19-desktop-chat.md`，同样只作用于本次运行，不改 `~/.cargo/config.toml`。
+- 地址都可覆盖：`HEYBE_DOCKER_MIRROR=<前缀>`、`HEYBE_CARGO_MIRROR=<索引>`；`--mirror off` 关掉。实现 `scripts/lib-mirror.sh`，测试 `scripts/mirror-mock-test.sh`。
 
 ## 2. 密钥处理
 
@@ -119,6 +139,8 @@ rm ~/.heybe-poc.env                           # 用完删除密钥文件
 ## 6. 结果回填表
 
 `report.md` 会自动填写下表；空格或「未运行」项需要人工补充。
+
+表由 `scripts/poc/poc-report-table.py` 从 `results.tsv` 的 METRIC 行生成。macOS 的 `du -sh | cut -f1` 会在体积前补空格（`install_size_boxlite= 96M`），旧解析会把这些值丢掉，表里出现 `lima_install=` 和 `| / 5.7G |`。现在记录时就去掉空格（`dsz`），解析时也按 key 切段再去空白，旧的 `results.tsv` 也能正确出表。测试：`scripts/poc/report-table-test.sh`，用 2026-11-02 Mac 实测数据（`scripts/poc/testdata/`，路径已脱敏）。
 
 | 项 | BoxLite | Lima+docker |
 |---|---|---|

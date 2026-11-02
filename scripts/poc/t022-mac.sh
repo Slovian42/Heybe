@@ -141,7 +141,7 @@ start_gateway() {
   export FASTCLAW_HOME="${FC_HOME}" FASTCLAW_PORT="${PORT}"
   stop_gateway
   if curl -s --noproxy '*' -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz"; then die E_PORT_BUSY "端口 ${PORT} 已被占用（可设 HEYBE_T022_PORT 换端口）"; fi
-  fc_env_bg "${PID_FILE}" "" nohup fastclaw >"${T022_HOME}/gateway.log" 2>&1
+  fc_env_bg "${PID_FILE}" "" nohup fastclaw gateway --port "${PORT}" >"${T022_HOME}/gateway.log" 2>&1
   local _i; for _i in $(seq 1 30); do curl -s --noproxy '*' -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz" && break; sleep 1; done
   curl -s --noproxy '*' -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz" || die E_GATEWAY "FastClaw 30 秒内没起来"
   ok "FastClaw gateway 已在 127.0.0.1:${PORT} 启动（独立数据目录）"

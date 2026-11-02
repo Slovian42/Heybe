@@ -3,10 +3,32 @@
 # 用法：
 #   scripts/dev/heybe-desktop-dev.sh          预检 → （首次）跑 t021 准备 FastClaw+DeepSeek → pnpm install → tauri dev
 #   scripts/dev/heybe-desktop-dev.sh check    退出 Heybe 后检查：没有残留的 fastclaw / 本地服务进程
+#   --yes          better-sqlite3 与当前 node 不匹配时直接 pnpm rebuild，不先问
+#   --mirror cn    本次编译 Rust 时 crates.io 走国内镜像（默认 rsproxy.cn，HEYBE_CARGO_MIRROR 可改）；
+#                  也可写 HEYBE_MIRROR=cn。只给这次的 cargo 传 --config，不改 ~/.cargo/config（scripts/lib-mirror.sh）
+# Node：仓库固定 Node 22（.nvmrc）。启动前会实际加载一次 better-sqlite3，不匹配（NODE_MODULE_VERSION）时
+#   提示切换 Node 或重建（scripts/dev/lib-node-check.sh）。
 # 密钥：只从 600 文件读进环境变量，不打印、不落别的盘。窗口里的服务地址和令牌由 Tauri 每次随机生成。
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=lib-node-check.sh
+. "$REPO_ROOT/scripts/dev/lib-node-check.sh"
+# shellcheck source=../lib-mirror.sh
+. "$REPO_ROOT/scripts/lib-mirror.sh"
+CMD="" YES=0 MIRROR="${HEYBE_MIRROR:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    check) CMD=check ;;
+    --yes|-y) YES=1 ;;
+    --mirror) [ $# -ge 2 ] || { echo "--mirror 后面要写 cn 或 off" >&2; exit 2; }; MIRROR="$2"; shift ;;
+    --mirror=*) MIRROR="${1#--mirror=}" ;;
+    -h|--help) awk 'NR > 1 && /^set -euo/ { exit } NR > 1' "$0"; exit 0 ;;
+    *) echo "未知参数：${1}（--help 查看用法）" >&2; exit 2 ;;
+  esac
+  shift
+done
+heybe_mirror_setup "$MIRROR" || exit 2
 T021_HOME="${HEYBE_T021_HOME:-$HOME/.local/opt/heybe-t021}"
 FC_HOME="${T021_HOME}/fastclaw-home"
 FC_BIN="${HEYBE_FASTCLAW_BIN:-$HOME/.local/opt/fastclaw/bin/fastclaw}"
@@ -18,7 +40,7 @@ die() { printf '  \033[31m✗ [%s]\033[0m %s\n' "$1" "$2" >&2; exit 1; }
 
 leftovers() { pgrep -fl "fastclaw|services/task-manager/src/main.ts" | grep -v -E "pgrep|heybe-desktop-dev" || true; }
 
-if [ "${1:-}" = "check" ]; then
+if [ "$CMD" = "check" ]; then
   left="$(leftovers)"
   if [ -n "$left" ]; then printf '%s\n' "$left"; die E_LEFTOVER "还有残留进程（见上）"; fi
   curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz" && die E_LEFTOVER "端口 ${PORT} 上 FastClaw 还在响应"
@@ -29,7 +51,7 @@ fi
 echo "== 预检"
 [ "$(uname -s)/$(uname -m)" = "Darwin/arm64" ] || die E_PLATFORM "只支持 Apple Silicon Mac（当前 $(uname -s)/$(uname -m)）"
 xcode-select -p >/dev/null 2>&1 || die E_XCODE "缺 Xcode 命令行工具：xcode-select --install"
-command -v node >/dev/null || die E_NODE "缺 node（需要 20+）"
+command -v node >/dev/null || die E_NODE "缺 node（推荐 Node $(cat "$REPO_ROOT/.nvmrc")：nvm install / fnm install）"
 command -v pnpm >/dev/null || die E_PNPM "缺 pnpm：corepack enable"
 command -v cargo >/dev/null || die E_RUST "缺 Rust：https://rustup.rs"
 if command -v rustup >/dev/null && ! rustup target list --installed | grep -q aarch64-apple-darwin; then
@@ -38,6 +60,14 @@ fi
 ok "node $(node -v)、pnpm $(pnpm -v)、$(cargo -V | cut -d' ' -f1-2)"
 
 if [ -n "$(leftovers)" ]; then die E_RUNNING "已有 fastclaw/本地服务在跑（可能是上次的 t021 或 Heybe）。先退出，或跑：scripts/poc/t021-mac.sh cleanup"; fi
+# 端口被占（例如上次留下、报 "FastClaw dev" 的 daemon，或别的程序）：直接报错，不去连别人的 gateway
+port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/${PORT}") 2>/dev/null; }
+if port_busy; then
+  if curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz"; then
+    die E_FC_FOREIGN_GATEWAY "端口 ${PORT} 上已经有一个 FastClaw gateway 在跑（不是这次启动的）。先 fastclaw daemon stop 或 scripts/poc/t021-mac.sh cleanup；也可以 HEYBE_T021_PORT=别的端口"
+  fi
+  die E_FC_PORT_BUSY "端口 ${PORT} 被别的程序占用（lsof -nP -iTCP:${PORT} -sTCP:LISTEN 查是谁），或者 HEYBE_T021_PORT=别的端口"
+fi
 
 if [ ! -s "$KEY_FILE" ] || [ ! -x "$FC_BIN" ]; then
   echo "== 首次准备：FastClaw + DeepSeek Agent（scripts/poc/t021-mac.sh）"
@@ -50,6 +80,8 @@ ok "FastClaw 数据目录 ${FC_HOME}，端口 ${PORT}"
 echo "== 依赖"
 (cd "$REPO_ROOT" && pnpm install --frozen-lockfile >/dev/null)
 ok "pnpm install 完成"
+heybe_node_check "$REPO_ROOT" "$YES" || die E_NODE_ABI "better-sqlite3 和当前 node $(node -v) 不匹配，本地服务起不来（见上面的说明）"
+ok "better-sqlite3 能在 node $(node -v) 下加载"
 
 # 本地服务（由 Tauri 拉起）负责启动/停止 gateway；这里只给它路径和端口。
 export HEYBE_FASTCLAW_GATEWAY_BIN="$FC_BIN"
@@ -58,5 +90,8 @@ export HEYBE_FASTCLAW_BASE_URL="http://127.0.0.1:${PORT}"
 HEYBE_FASTCLAW_CHAT_TOKEN="$(cat "$KEY_FILE")"; export HEYBE_FASTCLAW_CHAT_TOKEN
 
 echo "== 启动 Heybe（首次编译 Rust 要几分钟；关窗=隐藏，Cmd+Q=退出）"
+ok "$(heybe_mirror_summary)"
 cd "$REPO_ROOT/apps/desktop"
+# tauri dev -- <参数> 原样传给 cargo run；没配镜像时不传任何参数
+if [ -n "$HEYBE_CARGO_MIRROR" ]; then exec pnpm tauri dev -- "${HEYBE_CARGO_ARGS[@]}"; fi
 exec pnpm tauri dev

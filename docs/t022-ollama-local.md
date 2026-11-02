@@ -13,7 +13,7 @@ FastClaw 每轮发给模型的系统提示和工具说明约 1.1 万 token，而
 
 ## 步骤（需 #76 合入 main 后才可用；未合入前把第 2 步的 `main` 换成分支名 `feat/t022-ollama-mac`）
 
-**1. 检查前置（Ollama、Node 20+、pnpm）**
+**1. 检查前置（Ollama、Node 22（`.nvmrc`）、pnpm）**
 ```bash
 (ollama -v || ls -d /Applications/Ollama.app) && node -v && (pnpm -v || (corepack enable && pnpm -v))
 ```

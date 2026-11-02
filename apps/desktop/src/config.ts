@@ -10,6 +10,8 @@ export interface ServiceInfo {
   url: string | null;
   token: string;
   restarts: number;
+  /** Readable reason from the shell when status is "failed" (port taken, version mismatch, gave up…). */
+  error: string | null;
 }
 
 export type Invoke = (cmd: string) => Promise<unknown>;
@@ -36,10 +38,11 @@ export async function loadServiceInfo(
       url: status === "ready" ? loopbackUrl(raw.url) : null,
       token: typeof raw.token === "string" ? raw.token : "",
       restarts: raw.restarts ?? 0,
+      error: typeof raw.error === "string" && raw.error ? raw.error.slice(0, 600) : null,
     };
   }
   const url = loopbackUrl(env.VITE_HEYBE_SERVICE_URL);
-  return { status: url ? "ready" : "failed", url, token: env.VITE_HEYBE_SERVICE_TOKEN ?? "", restarts: 0 };
+  return { status: url ? "ready" : "failed", url, token: env.VITE_HEYBE_SERVICE_TOKEN ?? "", restarts: 0, error: null };
 }
 
 export const STATUS_BANNER: Record<ServiceStatus, string> = {
@@ -48,3 +51,9 @@ export const STATUS_BANNER: Record<ServiceStatus, string> = {
   reconnecting: "本地服务断开，正在重连…",
   failed: "本地服务没有启动，请退出后重开 Heybe",
 };
+
+/** Banner text; for "failed" it carries the shell's reason so the user knows what to fix. */
+export function bannerText(info: Pick<ServiceInfo, "status" | "error">): string {
+  const base = STATUS_BANNER[info.status];
+  return info.status === "failed" && info.error ? `${base}：${info.error}` : base;
+}

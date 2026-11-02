@@ -12,6 +12,10 @@
 #   自动在 127.0.0.1:${BOXLITE_SHIM_PORT:-8101} 起兼容垫片（boxlite-shim.py，只删这个字段）。
 # Lima 镜像（仅新建实例时生效）：LIMA_MIRROR=tuna|nju [LIMA_UBUNTU=26.04|24.04]，或 LIMA_IMAGE_URL=https://…，
 #   或 LIMA_IMAGE_FILE=/abs/path.img（本地文件）；LIMA_IMAGE_DIGEST=sha256:… 可选（预设镜像自带）。
+# 镜像（可选，默认关）：--mirror cn 或 HEYBE_MIRROR=cn → lima 组的 docker pull 先走 HEYBE_DOCKER_MIRROR
+#   （默认 docker.m.daocloud.io）再 docker tag 回原名；不改 daemon 配置。BoxLite 自己拉镜像，不受影响。
+# Agent id：/v1 只认 agt_…，verify 先按名字（HEYBE_POC_AGENT_NAME，默认 poc）经 GET /v1/agents 查 id，
+#   查不到再用 fastclaw agents list、setup 记下的 id；HEYBE_POC_AGENT=agt_… 可手动指定。
 # 密钥：
 #   DEEPSEEK_API_KEY  从 ${HEYBE_POC_ENV:-~/.heybe-poc.env} 读取（文件权限必须是 600，内容一行 DEEPSEEK_API_KEY=...）
 #   FastClaw apikey   由脚本自动生成，只写进 ${POC_HOME}/<backend>/fastclaw-apikey（600），不输出到终端
@@ -28,6 +32,8 @@ POC_HOME="${HEYBE_POC_HOME:-$HOME/.local/opt/heybe-poc}"
 POC_ENV="${HEYBE_POC_ENV:-$HOME/.heybe-poc.env}"
 # shellcheck source=lib-fc-env.sh
 . "$(cd "$(dirname "$0")" && pwd)/lib-fc-env.sh"
+# shellcheck source=lib-fc-agent.sh
+. "$(cd "$(dirname "$0")" && pwd)/lib-fc-agent.sh"
 BOXLITE_DIR="$HOME/.local/opt/boxlite/bin"
 FASTCLAW_DIR="$HOME/.local/opt/fastclaw/bin"
 LOG_DIR="$POC_HOME/logs"
@@ -38,10 +44,28 @@ BOXLITE_PORT="${BOXLITE_PORT:-8100}"
 BOXLITE_SHIM="${BOXLITE_SHIM:-auto}"                # auto=按 fc-compat 结果决定；1=强制；0=关闭
 BOXLITE_SHIM_PORT="${BOXLITE_SHIM_PORT:-8101}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib-mirror.sh
+. "$SCRIPT_DIR/../lib-mirror.sh"
+_ARGS=(); _MIRROR="${HEYBE_MIRROR:-}"   # --mirror 可写在任意位置，其余参数照旧是 <step> [backend]
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --mirror) [ $# -ge 2 ] || { echo "--mirror 后面要写 cn 或 off" >&2; exit 2; }; _MIRROR="$2"; shift ;;
+    --mirror=*) _MIRROR="${1#--mirror=}" ;;
+    *) _ARGS+=("$1") ;;
+  esac
+  shift
+done
+set -- ${_ARGS[@]+"${_ARGS[@]}"}
+heybe_mirror_setup "$_MIRROR" || exit 2
 API_FILE="$POC_HOME/boxlite.api"                    # 探测到的 REST 前缀，如 /v1
 COMPAT_FILE="$POC_HOME/boxlite.fc-compat"           # ok | reject_auto_remove
 FASTCLAW_PORT="${FASTCLAW_PORT:-18953}"
-AGENT="${HEYBE_POC_AGENT:-poc}"
+# Agent：agents init/config/doctor 用名字；/v1 只认 id（agt_…），verify 时按名字查 id（lib-fc-agent.sh）。
+#   HEYBE_POC_AGENT=agt_… 手动指定 /v1 用的 id（跳过查找）；写成名字也兼容（当作 HEYBE_POC_AGENT_NAME）。
+AGENT_NAME="${HEYBE_POC_AGENT_NAME:-poc}"
+AGENT_OVERRIDE=""
+case "${HEYBE_POC_AGENT:-}" in "") ;; agt_*) AGENT_OVERRIDE=$HEYBE_POC_AGENT ;; *) AGENT_NAME=$HEYBE_POC_AGENT ;; esac
+AGENT_ID=""
 MODEL="${HEYBE_POC_MODEL:-deepseek/deepseek-chat}"
 LIMA_NAME="heybe-poc"
 SECRET_FILE="$HOME/Documents/heybe-poc-secret.txt"
@@ -53,11 +77,14 @@ export PATH="$BOXLITE_DIR:$FASTCLAW_DIR:$PATH"
 pass() { printf '\033[32mPASS\033[0m %s\n' "$*"; printf 'PASS\t%s\t%s\n' "$(date +%FT%T)" "$*" >>"$RESULTS"; }
 fail() { printf '\033[31mFAIL\033[0m %s\n' "$*" >&2; printf 'FAIL\t%s\t%s\n' "$(date +%FT%T)" "$*" >>"$RESULTS"; exit 1; }
 info() { printf -- '---- %s\n' "$*"; }
+# dsz <du 参数…>：只取体积（macOS du 在体积前补空格，cut -f1 会带进 " 96M"）；没有输出返回 1
+dsz()  { local v; v=$(du -sh "$@" 2>/dev/null | awk 'NR == 1 { print $1 }'); [ -n "$v" ] && printf '%s\n' "$v"; }
 rec()  { printf 'METRIC\t%s\t%s\n' "$(date +%FT%T)" "$*" | tee -a "$RESULTS"; }
 need() { command -v "$1" >/dev/null 2>&1 || fail "缺少命令 ${1}"; }
 now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
 home_for() { echo "$POC_HOME/$1"; }               # 每个后端独立的 FASTCLAW_HOME
 apikey_file() { echo "$POC_HOME/$1/fastclaw-apikey"; }
+agent_id_file() { echo "$POC_HOME/$1/agent-id"; }   # setup 时从 agents init 输出记下的 id（查找的最后一级兜底）
 file_mode() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }   # macOS / Linux
 
 wait_http() { local _i; for _i in $(seq 1 "$2"); do curl -sS -o /dev/null -m 2 "$1" 2>/dev/null && return 0; sleep 1; done; return 1; }
@@ -119,7 +146,7 @@ step_install() {
   fastclaw version | grep -q "${FASTCLAW_VERSION#v}" || fail "fastclaw 版本不是 ${FASTCLAW_VERSION}"
   rec "fastclaw_version=$(fastclaw version | head -1 | tr ' ' '_')"
   pass "fastclaw ${FASTCLAW_VERSION} 已安装"
-  rec "install_size_boxlite=$(du -sh "$HOME/.local/opt/boxlite" | cut -f1) install_size_fastclaw=$(du -sh "$HOME/.local/opt/fastclaw" | cut -f1)"
+  rec "install_size_boxlite=$(dsz "$HOME/.local/opt/boxlite") install_size_fastclaw=$(dsz "$HOME/.local/opt/fastclaw")"
   { echo '$ boxlite serve --help'; boxlite serve --help 2>&1 || true
     echo; echo '$ fastclaw --help'; fastclaw --help 2>&1 || true
     echo; echo '$ fastclaw apikey create --help'; fastclaw apikey create --help 2>&1 || true; } >"$LOG_DIR/help.txt"
@@ -323,7 +350,7 @@ start_fastclaw() { # backend
   fi
   # `fastclaw` 无子命令即启动 gateway（FC:cmd/fastclaw/main.go:127）
   # 只传白名单环境变量；BOXLITE_API_KEY 是本地 serve 的占位值，显式放行；DEEPSEEK_API_KEY 不传（已在 init 时写库）
-  fc_env_bg "$POC_HOME/fastclaw.pid" "BOXLITE_API_KEY" nohup fastclaw >"$LOG_DIR/fastclaw-$backend.log" 2>&1
+  fc_env_bg "$POC_HOME/fastclaw.pid" "BOXLITE_API_KEY" nohup fastclaw gateway --port "$FASTCLAW_PORT" >"$LOG_DIR/fastclaw-$backend.log" 2>&1
   echo "$backend" >"$POC_HOME/fastclaw.backend"
   wait_http "http://127.0.0.1:$FASTCLAW_PORT/" 30 || fail "FastClaw 未起来，见 ${LOG_DIR}/fastclaw-${backend}.log"
   pass "FastClaw 以 backend=${backend}、ENFORCE=1 启动（未设置 FASTCLAW_ALLOW_HOST_EXEC）"
@@ -337,19 +364,21 @@ step_setup() { # backend
   # --api-key-env：init 读出变量值写进数据库（FC:internal/agentcli/agentcli.go:550–558），gateway 运行时不需要它。
   # init 会在没有用户时创建 super_admin "admin" 并打印生成的密码：输出只留内存，不落盘
   local init_out init_rc=0
-  init_out=$(fc_env_exec DEEPSEEK_API_KEY fastclaw agents init "$AGENT" --provider deepseek --model "$MODEL" --api-key-env DEEPSEEK_API_KEY 2>&1) || init_rc=$?
+  init_out=$(fc_env_exec DEEPSEEK_API_KEY fastclaw agents init "$AGENT_NAME" --provider deepseek --model "$MODEL" --api-key-env DEEPSEEK_API_KEY 2>&1) || init_rc=$?
+  local init_id; init_id=$(fc_agent_id_from_init "$init_out")
   # shellcheck disable=SC2034  # 有意清空：init 输出可能含管理员密码
   init_out=""
+  if [ -n "$init_id" ]; then ( umask 077; printf '%s\n' "$init_id" >"$(agent_id_file "$backend")" ); fi
   fc_lock_home "$home"
   [ "$init_rc" = 0 ] || fail "[${backend}] agents init 失败（退出码 ${init_rc}；手动重跑看原因）"
-  pass "[${backend}] Agent ${AGENT} 已配置 provider=deepseek model=${MODEL}"
+  pass "[${backend}] Agent ${AGENT_NAME} 已配置 provider=deepseek model=${MODEL}${init_id:+（id ${init_id}）}"
   if [ "$backend" = docker ]; then
     # 沙箱网络：agent 作用域 setting（FC:internal/agentcli/agentcli.go settingKey，sandbox.* 为 agent scope）
-    fastclaw agents config "$AGENT" set sandbox.network none >/dev/null 2>&1 \
+    fastclaw agents config "$AGENT_NAME" set sandbox.network none >/dev/null 2>&1 \
       || fail "[${backend}] 设置 sandbox.network=none 失败"
     pass "[${backend}] sandbox.network=none 已写入 Agent 配置（是否作用于系统沙箱池待核实，见验证 3）"
   fi
-  fastclaw agents doctor "$AGENT" >"$LOG_DIR/doctor-$backend.txt" 2>&1 || fail "[${backend}] agents doctor 未通过（见 ${LOG_DIR}/doctor-${backend}.txt）"
+  fastclaw agents doctor "$AGENT_NAME" >"$LOG_DIR/doctor-$backend.txt" 2>&1 || fail "[${backend}] agents doctor 未通过（见 ${LOG_DIR}/doctor-${backend}.txt）"
   pass "[${backend}] agents doctor 通过"
 
   info "[${backend}] 生成 FastClaw apikey"
@@ -367,9 +396,20 @@ step_setup() { # backend
   pass "[${backend}] apikey 已写入 ${kf}（600）"
 }
 
-chat() { # backend prompt
+# resolve_agent <backend>：设置 AGENT_ID（/v1 用的 agt_…）；HEYBE_POC_AGENT=agt_… 优先
+resolve_agent() {
   load_apikey "$1"
-  python3 - "$FASTCLAW_PORT" "$AGENT" "$2" <<'PY'
+  AGENT_ID=$(FASTCLAW_HOME=$(home_for "$1") fc_resolve_agent_id "$FASTCLAW_PORT" "${AGENT_OVERRIDE:-$AGENT_NAME}" fastclaw "$(agent_id_file "$1")") \
+    || fail "[${1}] 查不到 Agent ${AGENT_NAME} 的 id（/v1 不认名字，会 404 agent_not_found）；可用 HEYBE_POC_AGENT=agt_… 手动指定"
+  rec "[$1] agent_id=${AGENT_ID}"
+  local src="按名字 ${AGENT_NAME} 查到"; [ -z "$AGENT_OVERRIDE" ] || src="HEYBE_POC_AGENT 手动指定"
+  pass "[${1}] /v1 使用 Agent id ${AGENT_ID}（${src}）"
+}
+
+chat() { # backend prompt（先 resolve_agent）
+  load_apikey "$1"
+  [ -n "$AGENT_ID" ] || fail "内部错误：chat 前没有 resolve_agent"
+  python3 - "$FASTCLAW_PORT" "$AGENT_ID" "$2" <<'PY'
 import sys,os,json,urllib.request
 port,agent,prompt=sys.argv[1:]
 body=json.dumps({"model":agent,"agent_id":agent,"stream":True,"messages":[{"role":"user","content":prompt}]}).encode()
@@ -392,6 +432,7 @@ PY
 step_verify() { # backend
   local b=$1 log="$LOG_DIR/fastclaw-$1.log" out t0 t1 bad=0
   [ "$(cat "$POC_HOME/fastclaw.backend" 2>/dev/null)" = "$b" ] || fail "[${b}] 当前运行的 FastClaw 不是 ${b} 后端"
+  resolve_agent "$b"
   ( info "[${b}] 验证 1：命令输出经沙箱流式取回"
     t0=$(now_ms)
     out=$(chat "$b" 'Use the exec tool to run exactly: echo HEYBE_EXEC_$((40+2)) && uname -a . Reply with the raw tool output only.') || fail "[${b}] /v1 调用失败"
@@ -421,8 +462,8 @@ step_metrics() {
   local pid; pid=$(cat "$POC_HOME/boxlite.pid" 2>/dev/null || true)
   [ -n "$pid" ] && rec "boxlite_serve_rss_mb=$(( $(ps -o rss= -p "$pid" 2>/dev/null || echo 0)/1024 ))"
   rec "boxlite_vm_rss_mb=$(ps -axo rss,comm | awk '/boxlite|krun|shim/ {s+=$1} END {print int(s/1024)}')"
-  rec "boxlite_data_size=$(du -sh "$HOME/.boxlite" 2>/dev/null | cut -f1 || echo 待核实路径)"
-  rec "install_size_total=$(du -sh "$HOME/.local/opt" | cut -f1)"
+  rec "boxlite_data_size=$(dsz "$HOME/.boxlite" || echo 待核实路径)"
+  rec "install_size_total=$(dsz "$HOME/.local/opt")"
   pass "metrics 已记录"
 }
 
@@ -498,9 +539,13 @@ step_lima() {
   fi
   export DOCKER_HOST="unix://${HOME}/.lima/${LIMA_NAME}/sock/docker.sock"
   docker info >/dev/null 2>&1 || fail "docker info 失败（DOCKER_HOST=${DOCKER_HOST}；排查：limactl list; ls ~/.lima/${LIMA_NAME}/sock）"
-  docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1 || docker pull "$SANDBOX_IMAGE" >"$LOG_DIR/docker-pull.log" 2>&1 || fail "拉取 ${SANDBOX_IMAGE} 失败"
+  [ -n "$HEYBE_DOCKER_MIRROR" ] && info "$(heybe_mirror_summary)"
+  if ! heybe_docker_pull "$SANDBOX_IMAGE" >"$LOG_DIR/docker-pull.log" 2>&1; then
+    heybe_docker_mirror_hint
+    fail "拉取 ${SANDBOX_IMAGE} 失败（见 ${LOG_DIR}/docker-pull.log；国内网络可加 --mirror cn 或 HEYBE_DOCKER_MIRROR=<前缀>）"
+  fi
   local w0 w1; w0=$(now_ms); docker run --rm "$SANDBOX_IMAGE" true; w1=$(now_ms); rec "lima_warm_container_ms=$((w1-w0))"
-  rec "lima_disk=$(du -sh "$HOME/.lima/$LIMA_NAME" | cut -f1) lima_install=$(du -shL "$(brew --prefix lima)" | cut -f1)"
+  rec "lima_disk=$(dsz "$HOME/.lima/$LIMA_NAME") lima_install=$(dsz -L "$(brew --prefix lima)")"
   rec "lima_vm_rss_mb=$(ps -axo rss,command | awk '/limactl|vz|Virtualization/ {s+=$1} END {print int(s/1024)}')"
   pass "Lima docker 可用：${DOCKER_HOST}"
 }
@@ -541,38 +586,7 @@ step_report() {
     echo "## BoxLite REST 前缀探测"; echo; echo '```'; cat "$LOG_DIR/boxlite-api-probe.txt" 2>/dev/null || echo "（未运行）"; echo '```'; echo
     echo "## WebSocket 直测"; echo; echo '```'; grep -E '^(attach_path|handshake|frames_with_marker):' "$LOG_DIR/ws-probe.txt" 2>/dev/null || echo "（未运行）"; echo '```'; echo
     if [ -s "$POC_HOME/t032-report.md" ]; then cat "$POC_HOME/t032-report.md"; echo; fi   # #7 运行时补测（t032-runtime-checks.sh）
-    echo "## 回填表（自动）"; echo; python3 - "$RESULTS" "$STATUS_DIR" <<'PY'
-import sys,re,os
-res,sd=sys.argv[1:]
-m={}; st=lambda k: open(os.path.join(sd,k)).read().strip() if os.path.exists(os.path.join(sd,k)) else "未运行"
-lines=open(res).read().splitlines() if os.path.exists(res) else []
-for l in lines:
-    p=l.split("\t",2)
-    if len(p)<3: continue
-    if p[0]=="METRIC":
-        for kv in re.findall(r'(\[\w+\] )?(\w+)=(\S+)',p[2]): m[(kv[0].strip()+kv[1])]=kv[2]
-def r(kind,b,n):
-    pat=f"[{b}] 验证{n}"
-    hit=[l.split("\t")[0] for l in lines if pat in l]
-    return hit[-1] if hit else "未运行"
-g=lambda k: m.get(k,"")
-rows=[("macOS / 芯片 / 内存",f"{g('macos')} / {g('arch')} / {g('mem_gb')}GB","同左"),
-("组件版本",f"boxlite={g('boxlite_version')} / {g('fastclaw_version')}",f"lima_install={g('lima_install')}"),
-("REST 前缀（探测命中，GET <前缀>/boxes）",f"{g('boxlite_rest_prefix')} → {g('boxlite_rest_list_http') or '—'}（/v1/me prefix={g('boxlite_me_prefix')}）","—"),
-("FastClaw v1.4.0 创建请求体",f"{g('fastclaw_create_compat')}（HTTP {g('fastclaw_create_probe_http')}）","—"),
-("FastClaw 连接参数",f"URL={g('fastclaw_boxlite_url')} PREFIX={g('fastclaw_boxlite_prefix')} 垫片={g('boxlite_shim') or '未启用'}","—"),
-("Lima 镜像","—",g('lima_image')),
-("验证1 /v1 流式输出",r(0,'boxlite',1),r(0,'docker',1)),
-("验证2 ~/Documents 不可读",r(0,'boxlite',2),r(0,'docker',2)),
-("验证3 出网被拦",r(0,'boxlite',3),r(0,'docker',3)),
-("冷启动 ms",g('boxlite_cold_create_start_ms'),g('lima_cold_start_ms') or g('lima_restart_ms')),
-("热启动 ms",g('boxlite_warm_exec_submit_ms'),g('lima_warm_container_ms')),
-("首轮对话 ms",g('[boxlite]first_turn_ms'),g('[docker]first_turn_ms')),
-("安装/数据体积",f"{g('install_size_boxlite')} / {g('boxlite_data_size')}",f"{g('lima_install')} / {g('lima_disk')}"),
-("内存 MB",f"serve={g('boxlite_serve_rss_mb')} vm={g('boxlite_vm_rss_mb')}",g('lima_vm_rss_mb'))]
-print("| 项 | BoxLite | Lima+docker |\n|---|---|---|")
-for a,b,c in rows: print(f"| {a} | {b or '—'} | {c or '—'} |")
-PY
+    echo "## 回填表（自动）"; echo; python3 "$SCRIPT_DIR/poc-report-table.py" "$RESULTS" "$STATUS_DIR"
     echo; echo "## results.tsv"; echo; echo '```'; cat "$RESULTS" 2>/dev/null; echo '```'; echo
     echo "## --help 输出"; echo; echo '```'; cat "$LOG_DIR/help.txt" 2>/dev/null || echo "（未运行 install）"; echo '```'; echo
     echo "## 失败步骤日志尾部"; echo
@@ -679,5 +693,5 @@ case "${1:-}" in
   report) step_report ;;
   cleanup-fastclaw) cleanup_fastclaw; pass "FastClaw 已停止" ;;
   cleanup) step_cleanup ;;
-  *) sed -n 2,20p "$0"; exit 2 ;;
+  *) awk 'NR > 1 && /^set -euo/ { exit } NR > 1' "$0"; exit 2 ;;
 esac

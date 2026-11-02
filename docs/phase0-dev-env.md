@@ -20,9 +20,9 @@
 
 1. **Xcode Command Line Tools**：`xcode-select --install`
 2. **Homebrew**：按 https://brew.sh 官方命令安装
-3. **Node LTS（20）+ pnpm**
+3. **Node 22 LTS + pnpm**（`.nvmrc`；`package.json` engines 为 `>=20 <23`）
    ```bash
-   brew install fnm && fnm install 20 && fnm use 20   # 仓库含 .nvmrc
+   brew install fnm && fnm install 22 && fnm use 22   # 仓库含 .nvmrc（Node 22；CI 也读它）
    corepack enable && corepack prepare pnpm@10.34.6 --activate
    ```
 4. **Rust + Tauri 依赖**

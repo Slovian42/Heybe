@@ -13,11 +13,19 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm test
+      - name: shellcheck
+        run: git ls-files '*.sh' | xargs shellcheck -S warning -x -P SCRIPTDIR
+      - name: shell mock tests
+        run: |
+          for t in scripts/dev/node-check-mock-test.sh scripts/mirror-mock-test.sh \
+                   scripts/poc/fc-agent-mock-test.sh scripts/poc/report-table-test.sh scripts/poc/t032-mock-test.sh; do
+            echo "== $t"; bash "$t"
+          done
   dco:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

@@ -5,7 +5,7 @@
   "description": "Heybe Community: local personal agent assistant on top of FastClaw /v1 API",
   "packageManager": "pnpm@10.34.6",
   "engines": {
-    "node": ">=20"
+    "node": ">=20 <23"
   },
   "scripts": {
     "lint": "eslint . && node scripts/check-boundaries.mjs && pnpm -r --if-present typecheck",

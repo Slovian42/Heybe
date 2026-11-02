@@ -1,7 +1,11 @@
 // Entry point the desktop shell runs (19-b). Prints one READY line with the port on stdout.
 // Exits (stopping the gateway) on SIGTERM/SIGINT, when stdin closes (the shell died), or
 // when the owned gateway dies, so the shell's supervisor restarts both.
-import { READY_PREFIX, startHeybeService } from "./service.js";
+import { GatewayError } from "./gateway.js";
+import { ERROR_PREFIX, READY_PREFIX, startHeybeService } from "./service.js";
+
+/** Exit code for errors a restart cannot fix (port taken, foreign/mismatched gateway). */
+const EXIT_FATAL = 3;
 
 async function main(): Promise<void> {
   const service = await startHeybeService(process.env);
@@ -27,6 +31,10 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  process.stderr.write(`heybe-service: ${err instanceof Error ? err.message : "start failed"}\n`);
-  process.exit(1);
+  const message = err instanceof Error ? err.message : "start failed";
+  const code = err instanceof GatewayError ? err.code : "E_SERVICE_START";
+  const retryable = err instanceof GatewayError ? err.retryable : true;
+  process.stderr.write(`heybe-service: ${message}\n`);
+  process.stdout.write(`${ERROR_PREFIX}${JSON.stringify({ code, message, retryable })}\n`);
+  process.exit(retryable ? 1 : EXIT_FATAL);
 });

@@ -7,14 +7,18 @@
 #   C3 delegate_task 子 Agent 的命令是否与父 Agent 在同一个沙箱（比对 Linux boot_id + hostname）。
 #   C4 未设 FASTCLAW_ALLOW_HOST_EXEC：gateway 进程环境里没有它、模型工具列表里没有 host_exec、流里没出现 host_exec 调用。
 # 结果写 ${POC_HOME}/t032-report.md，并重新生成 report.md（boxlite-poc.sh report 会把这一节并进去）。
-# 环境变量：HEYBE_POC_HOME、FASTCLAW_PORT、HEYBE_POC_AGENT 同 boxlite-poc.sh；T032_NO_START=1 不自动启动 boxlite 版 FastClaw（干跑/mock 用）。
+# 环境变量：HEYBE_POC_HOME、FASTCLAW_PORT、HEYBE_POC_AGENT_NAME、HEYBE_POC_AGENT 同 boxlite-poc.sh
+#   （/v1 只认 agt_… id：按名字经 GET /v1/agents 查，HEYBE_POC_AGENT=agt_… 手动指定）；T032_NO_START=1 不自动启动 boxlite 版 FastClaw（干跑/mock 用）。
 # 不打印任何密钥：FastClaw apikey 只从 600 文件读进环境变量，交给 python 发请求。
 set -euo pipefail
 umask 077
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 POC_HOME="${HEYBE_POC_HOME:-$HOME/.local/opt/heybe-poc}"
 FASTCLAW_PORT="${FASTCLAW_PORT:-18953}"
-AGENT="${HEYBE_POC_AGENT:-poc}"
+AGENT_NAME="${HEYBE_POC_AGENT_NAME:-poc}"
+case "${HEYBE_POC_AGENT:-}" in "") AGENT_REQ=$AGENT_NAME ;; agt_*) AGENT_REQ=$HEYBE_POC_AGENT ;; *) AGENT_NAME=$HEYBE_POC_AGENT; AGENT_REQ=$AGENT_NAME ;; esac
+# shellcheck source=lib-fc-agent.sh
+. "$SCRIPT_DIR/lib-fc-agent.sh"
 LOG_DIR="$POC_HOME/logs"
 OUT="$POC_HOME/t032-report.md"
 RAW="$POC_HOME/.t032.rows"
@@ -39,6 +43,10 @@ KF="$POC_HOME/boxlite/fastclaw-apikey"
 [ -s "$KF" ] || { echo "FAIL 缺少 ${KF}（先跑 boxlite-poc.sh rerun-boxlite）" >&2; exit 1; }
 [ "$(file_mode "$KF")" = 600 ] || { echo "FAIL ${KF} 权限不是 600" >&2; exit 1; }
 FASTCLAW_API_KEY=$(cat "$KF"); export FASTCLAW_API_KEY
+# /v1 不认名字（传 poc → 404 agent_not_found）：先查出 agt_… id
+AGENT=$(FASTCLAW_HOME="$POC_HOME/boxlite" fc_resolve_agent_id "$FASTCLAW_PORT" "$AGENT_REQ" fastclaw "$POC_HOME/boxlite/agent-id") \
+  || { echo "FAIL 查不到 Agent ${AGENT_NAME} 的 id（可用 HEYBE_POC_AGENT=agt_… 手动指定）" >&2; exit 1; }
+info "/v1 使用 Agent id ${AGENT}"
 
 # chat <标签> <prompt> → 回复正文写 $LOG_DIR/t032-<标签>.txt，工具事件名写 …-tools.txt（每行 name status）
 chat() {
