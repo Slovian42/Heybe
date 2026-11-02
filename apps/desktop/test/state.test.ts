@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { chatReducer, initialChatState, STATUS_TEXT } from "../src/chat/state";
+import { chatReducer, initialChatState, STATUS_TEXT, statusText } from "../src/chat/state";
 
 const sent = chatReducer(initialChatState, { type: "send", userId: "u1", assistantId: "a1", content: "hi" });
 const a1 = (s: typeof sent) => s.messages.find((m) => m.id === "a1")!;
@@ -28,6 +28,21 @@ describe("chatReducer", () => {
     const err = chatReducer(sent, { type: "event", assistantId: "a1", event: { type: "error", kind: "interrupted", message: "x" } });
     expect(a1(err).status).toBe("interrupted");
     expect(a1(chatReducer(sent, { type: "end", assistantId: "a1" })).status).toBe("interrupted");
+  });
+
+  it("shows the specific failure reason instead of a bare 「没做成」 (#19 Mac 复验问题 2)", () => {
+    const err = chatReducer(sent, {
+      type: "event",
+      assistantId: "a1",
+      event: { type: "error", kind: "failed", reason: "key_invalid", code: "upstream_401", message: "模型密钥无效，请到设置里更换" },
+    });
+    expect(a1(err).status).toBe("failed");
+    expect(a1(err).error).toEqual({ reason: "key_invalid", code: "upstream_401", message: "模型密钥无效，请到设置里更换" });
+    expect(statusText(a1(err))).toBe("模型密钥无效，请到设置里更换");
+    // Older service without reason/message text: fall back to the generic status text.
+    const bare = chatReducer(sent, { type: "event", assistantId: "a1", event: { type: "error", kind: "failed", message: "" } });
+    expect(statusText(a1(bare))).toBe("没做成");
+    expect(statusText({ status: "stopped" })).toBe(STATUS_TEXT.stopped);
   });
 
   it("keeps HTML as plain text in state (rendered as a text node)", () => {

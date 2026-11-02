@@ -1,4 +1,4 @@
-import type { ChatServiceEvent } from "@heybe/shared-types/chat";
+import { chatErrorMessage, type ChatServiceEvent } from "@heybe/shared-types/chat";
 
 import { parseServiceSse, StreamTruncatedError } from "./sse";
 
@@ -34,11 +34,13 @@ export async function* streamChat(input: StreamChatInput): AsyncGenerator<ChatSe
     });
   } catch {
     if (input.signal?.aborted) return;
-    yield { type: "error", kind: "unavailable", message: "连不上本地服务" };
+    yield { type: "error", kind: "unavailable", reason: "runtime_unavailable", message: "连不上本地服务" };
     return;
   }
   if (!res.ok || !res.body) {
-    yield { type: "error", kind: "failed", message: "没做成" };
+    // The local service refused before streaming (bad token, bad request, crash): generic text + code.
+    const code = res.ok ? "service_empty_body" : `service_${res.status}`;
+    yield { type: "error", kind: "failed", reason: "unknown", code, message: chatErrorMessage("unknown", code) };
     return;
   }
   try {
@@ -47,6 +49,6 @@ export async function* streamChat(input: StreamChatInput): AsyncGenerator<ChatSe
     if (input.signal?.aborted) return;
     // StreamTruncatedError or a socket error mid-body: outcome unknown (#9).
     void (err instanceof StreamTruncatedError);
-    yield { type: "error", kind: "interrupted", message: "中断，结果未知" };
+    yield { type: "error", kind: "interrupted", reason: "interrupted", message: "中断，结果未知" };
   }
 }

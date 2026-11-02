@@ -17,26 +17,69 @@ fc_is_secret_name() { # name → 0 表示像密钥
 }
 
 # fc_env_exec "<额外变量名，空格分隔>" cmd args...
-# 用 env -i 只带白名单里已设置的变量；像密钥的名字只有写在第一个参数里才传。
-# FASTCLAW_ALLOW_HOST_EXEC 永远不传。
+# 子进程只拿到白名单里已设置的变量；像密钥的名字只有写在第一个参数里才传。FASTCLAW_ALLOW_HOST_EXEC 永远不传。
+# 变量**只经环境继承**交给 cmd，不进任何进程的 argv（Yang 11-02 定的规则：密钥只放子进程环境变量、不进命令参数）：
+# 在子 shell 里用内建命令 export / export -n 调整“要导出哪些变量”，然后直接 exec cmd。
+# 以前的写法 `env -i K=V cmd` 会让值（包括 DEEPSEEK_API_KEY）出现在 env 进程的命令行里，ps 能看到。
 fc_env_exec() {
-  local extra="$1" n allowed
+  local extra="$1"
   shift
-  local -a kv=()
+  if [ "${FC_ENV_EXEC:-}" = 1 ]; then
+    _fc_env_only "${extra}"
+    exec "$@"
+  fi
+  ( _fc_env_only "${extra}"; exec "$@" )
+}
+
+# _fc_env_only "<额外变量名>"：只在当前 shell 生效（调用方要在子 shell 里用），全部是 bash 内建，不起新进程。
+# shellcheck disable=SC2163 # 按变量名 export / export -n 是故意的
+_fc_env_only() {
+  local extra="$1" n keep=" " fl
   for n in ${HEYBE_FC_ENV_ALLOW} ${extra}; do
     [ "$n" = FASTCLAW_ALLOW_HOST_EXEC ] && continue
-    eval "allowed=\${${n}+set}"
-    [ "${allowed}" = set ] || continue
     if fc_is_secret_name "$n"; then
       case " ${extra} " in *" ${n} "*) ;; *) continue ;; esac
     fi
-    kv+=("${n}=${!n}")
+    keep="${keep}${n} "
   done
-  if [ "${FC_ENV_EXEC:-}" = 1 ]; then exec env -i "${kv[@]}" "$@"; fi
-  env -i "${kv[@]}" "$@"
+  _fc_unexport_all "${keep}"
+  # 名单里已设置的变量（包括只是 shell 变量、没 export 的 key）：export 是内建，不进 argv
+  for n in ${keep}; do
+    eval "fl=\${${n}+set}"
+    [ "${fl}" = set ] && export "${n}"
+  done
+  return 0
 }
 
-# fc_env_bg <pidfile> "<额外变量名>" cmd args...：后台启动，pidfile 里是真正的进程 pid（exec 链：env → nohup → cmd），
+# _fc_unexport_all "<保留的变量名，前后带空格>"：取消导出其他所有变量和导出的函数（值留在当前 shell，exec 后的进程拿不到）。
+# shellcheck disable=SC2163 # 按变量名 export / export -n 是故意的
+_fc_unexport_all() {
+  local keep="${1:- }" n names fl fn
+  names=$(compgen -e 2>/dev/null) || names=$(export -p | sed -n 's/^declare -x \([A-Za-z_][A-Za-z0-9_]*\).*/\1/p')
+  for n in ${names}; do
+    case "${keep}" in *" ${n} "*) ;; *) export -n "$n" 2>/dev/null || unset "$n" 2>/dev/null || true ;; esac
+  done
+  while read -r _ fl fn; do
+    case "${fl}" in *x*) export -nf "${fn}" 2>/dev/null || true ;; esac
+  done <<EOF
+$(declare -F)
+EOF
+  return 0
+}
+
+# fc_env_only_kv K=V ...：清空导出，只导出给定的 K=V（替代 `env -i K=V cmd`，值不进任何 argv）。
+# 只在子 shell 里用，之后 exec 目标命令：( fc_env_only_kv ${A[@]+"${A[@]}"} && exec cmd args... )
+# shellcheck disable=SC2163 # 按变量名 export / export -n 是故意的
+fc_env_only_kv() {
+  local kv
+  _fc_unexport_all " "
+  for kv in "$@"; do
+    export "${kv}"
+  done
+  return 0
+}
+
+# fc_env_bg <pidfile> "<额外变量名>" cmd args...：后台启动，pidfile 里是真正的进程 pid（子 shell 直接 exec 成 cmd），
 # 且进程不是调用脚本的子进程，脚本里不带参数的 wait 不会被它挂住。
 fc_env_bg() {
   local pidfile="$1"

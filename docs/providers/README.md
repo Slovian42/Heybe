@@ -91,5 +91,6 @@ scripts/dev/providers-mac-check.sh --mock  # box/CI 干跑（vitest 也会跑一
 | ④ 清理 | 接口回读 `set=false`，`security` 找不到条目；临时 FastClaw 停止，数据目录删除 |
 
 - 报告路径：`~/heybe-reports/providers-mac-check-<时间>.md`（权限 600，可用 `HEYBE_REPORT_DIR` 改）。报告只含 key 后 4 位，写完会自检，发现完整 key 就删除报告并判为失败。
-- key 的传递路径：从文件读入 shell 变量，用 `printf`（shell 内建命令）经 stdin 交给 curl，任务服务再经 `security -i` 的 stdin 写入钥匙串。全程不出现在任何进程的 argv 上。
+- key 的传递路径：从文件读入 shell 变量，用 `printf`（shell 内建命令）经 stdin 交给 curl，任务服务再经 `security -i` 的 stdin 写入钥匙串。报告自检用 bash 自己的字符串匹配（`$(<报告)` + `case`），不调用 `grep`。全程不出现在任何进程的 argv 上。
+- 临时 FastClaw 的令牌 `HEYBE_FASTCLAW_CHAT_TOKEN` 只经环境继承交给任务服务：在子 shell 里用 `fc_env_only_kv`（内建 `export` / `export -n`）设好环境后 `exec`。2026-11-02 之前这里用的是 `env -i K=V …`、自检用的是 `grep -F "$KEY"`，令牌和 key 会短暂出现在 `env` / `grep` 进程的 argv 里，已改正。
 - 临时 FastClaw 运行在单独的 `FASTCLAW_HOME`（临时目录）里，不影响已有的 `~/.fastclaw`。

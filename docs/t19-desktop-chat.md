@@ -10,7 +10,7 @@ React（apps/desktop） --POST /chat/sessions/:id/messages (SSE)--> Heybe 本地
 ```
 
 - 前端只连本地服务，不连 FastClaw，不加载 FastClaw `web/`；CSP 只允许 `self` 与 `http://127.0.0.1:*`。
-- 服务端事件：`delta` / `tool`（running/done）/ `done` / `error`（interrupted=中断，结果未知；failed=没做成；unavailable），总以 `data: [DONE]` 结束。错误不透传上游原文。
+- 服务端事件：`delta` / `tool`（running/done）/ `done` / `error`（interrupted=中断，结果未知；failed=模型调用失败；unavailable=本地运行时未响应），带 `reason`/`code` 和中文 `message`（见下方「模型调用失败的原因」），总以 `data: [DONE]` 结束。错误不透传上游原文。
 - 会话键 `heybe:chat:<id>`。停止 = 前端断开 → 服务立刻断开上游；状态显示“已停止（服务端是否停止未知）”，下一轮前提示上一轮可能仍被补完（v1.4.0 无 /v1 stop，#9）。
 - 告警工具（界面上标“需要留意”）= `FASTCLAW_ALERT_TOOLS`（`packages/shared-types/src/chat.ts`，前端与任务服务共用一份）：
   - 来自 #67（Agent 管理类）：`create_agent` `configure_agent` `check_agent` `delete_agent` `spawn_subagent` `delegate_task` `install_skill`；
@@ -47,11 +47,85 @@ Tauri 壳（src-tauri/src/service.rs，Supervisor）
 - 一键开发脚本启动前也会探测端口：有 FastClaw 在响应报 `E_FC_FOREIGN_GATEWAY`，被别的程序占着报 `E_FC_PORT_BUSY`。
 - 退出（Cmd+Q）：壳给进程组发 SIGTERM，3 秒后 SIGKILL；服务收到 SIGTERM / 标准输入关闭（壳意外死掉）都会先停 gateway。gateway 自己挂了，服务也跟着退出并由壳重启。
 - 开发版命令：debug 构建用 `pnpm -C services/task-manager start`（tsx）；可用 `HEYBE_SERVICE_CMD` 覆盖。发布版打包成 sidecar 留给 19-h。
-- 一键开发脚本：`scripts/dev/heybe-desktop-dev.sh`（预检 → 首次自动跑 `scripts/poc/t021-mac.sh` 准备 FastClaw + DeepSeek → `pnpm install` → Node/better-sqlite3 检查 → `pnpm tauri dev`）；`… check` 检查残留进程。
+- 一键开发脚本：`scripts/dev/heybe-desktop-dev.sh`（预检 → DeepSeek key 连接测试 → 首次或 key 变了自动跑 `scripts/poc/t021-mac.sh` 准备/更新 FastClaw + DeepSeek Agent → `pnpm install` → Node/better-sqlite3 检查 → `pnpm tauri dev`）；`… check` 检查残留进程。
 - Node 版本：仓库固定 Node 22（`.nvmrc`）。better-sqlite3 是原生模块，按安装时的 Node 编译；换了 Node（例如 Mac 默认变成 v26）会报 `NODE_MODULE_VERSION` 不一致、本地服务起不来。脚本在启动前实际加载一次，不匹配时用中文说明原因，并提示 `nvm use` / `fnm use` 或 `pnpm -r rebuild better-sqlite3`；交互终端会先问，加 `--yes` 直接重建。`providers-mac-check.sh` 同样检查。
 - 国内镜像（可选，默认关）：`scripts/dev/heybe-desktop-dev.sh --mirror cn`（或 `HEYBE_MIRROR=cn`）让这次编译的 crates.io 走 `sparse+https://rsproxy.cn/index/`，`HEYBE_CARGO_MIRROR=<索引地址>` 可换成别的镜像。实现是给这次的 `cargo run` 传 `--config source.crates-io.replace-with=…`（经 `pnpm tauri dev -- <参数>`），并在本进程设 `CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse`，**不改 `~/.cargo/config.toml`**，也不需要在仓库里放 `.cargo/config.toml`（之前手工放的可以删掉）。见 `scripts/lib-mirror.sh`，测试 `scripts/mirror-mock-test.sh`。
 
 - 图标：`apps/desktop/src-tauri/icons/` 目前是**占位图标**（纯色底 + H，RGBA），正式图标由品牌方提供后覆盖同名文件（见该目录 `README.md`）。缺图标时 `generate_context!` 编译期 panic，`apps/desktop/test/icons.test.ts` 检查 `tauri.conf.json` 引用的图标都在。
+
+## 换 DeepSeek key（Mac 复验问题 1）
+
+- 现象：`heybe-desktop-dev.sh` 以前只在第一次（没有 `fastclaw-apikey` 或 FastClaw 二进制时）跑 t021 建 Agent，之后一直复用 `~/.local/opt/heybe-t021`。FastClaw v1.4.0 在 `agents init` 那一刻把 key 存进它自己的数据库（system 级 provider 行，按提供方名字 `deepseek` 存一份），之后不再读 `~/.heybe-poc.env`，所以 10-29 用旧 key 建的 Agent 换了 key 也一直 401。
+- FastClaw v1.4.0 没有单独改 key 的命令或 /v1 接口（/v1 只有 chat、agents、sessions）。现成的办法就是已批准的 `fastclaw agents init <名字> --id <agt_…> --api-key-env DEEPSEEK_API_KEY`：对已有 Agent 是原地更新（输出 `Agent "…" updated`），不换 owner、不生成新密码，重新从环境变量读 key；gateway 在跑时 CLI 会发 SIGHUP 让它重新加载。用真 FastClaw v1.4.0 + mock 上游核对过：更新后下一次对话上游收到的就是新 key（只比对了 Authorization 的 sha256）。
+- 现在的做法（`scripts/poc/lib-fc-key.sh`）：
+  - 每次启动比对 `~/.heybe-poc.env` 里 key 的 sha256 和 `~/.local/opt/heybe-t021/deepseek-key.sha256`（一行 `sha256:<hex>`，权限 600，不存明文也不存末 4 位）。
+  - 没变：直接复用。变了，或者没有指纹文件（旧版本建的目录）：重跑 t021。t021 现在先按名字查 Agent id，已有就带 `--id` 原地更新，然后做一次真实流式对话，成功写指纹。
+  - 原地更新失败（t021 以退出码 3 结束）：把旧目录改名为 `heybe-t021.bak-<时间>`（不删），再完整重建一次。
+  - key 只在 shell 变量里，经 `fc_env_exec` 只交给那一次 `agents init` 子进程：只走环境继承（子 shell 里内建 `export` / `export -n` 后 `exec`），不进任何进程的 argv（以前用 `env -i K=V`，key 会出现在 `env` 的命令行里，2026-11-02 改；`scripts/poc/argv-secret-mock-test.sh` 检查）；`agents init` 的输出（新建时含管理员密码）整段丢弃。
+  - 启动时连接测试：用 key 调一次 DeepSeek `GET /models`（不花钱），HTTP 401/403 → 红色 `✗ [E_KEY_INVALID]`，中文提示到 `~/.heybe-poc.env` 换 key；连不上或其他状态码只给黄色提示、继续启动。`HEYBE_SKIP_KEY_TEST=1` 跳过。
+- #85 的 provisioner（设置页“测试连接”）：每次测试都用当前 key 跑一次 `agents init`，已存在时按 `already exists (id …)` 带 `--id` 重试，所以不会卡在旧 key（加了单测：换 key 后第二次测试带 `--id` 且子进程拿到新 key）。注意 FastClaw 的 key 是按提供方名字存的：同一个 `FASTCLAW_HOME` 里测试 `deepseek` 会同时更新聊天 Agent 用的 deepseek key（这正是“一提供方一把 key”的设计）。设置页保存 key（`PUT /providers/keys/:ref`）目前只写钥匙串，还没接到聊天 Agent（首启引导 19-g / #16-c 再接）。
+- 测试：`scripts/poc/key-sync-mock-test.sh`（假 fastclaw + 假 DeepSeek，CI 里跑）。
+
+## 模型调用失败的原因（Mac 复验问题 2）
+
+以前界面上只显示「没做成」。现在服务端的 `error` 事件带上 `reason`（类型 `ChatErrorReason`，在 `packages/shared-types/src/chat.ts`）、可选的短 `code`，以及固定的中文 `message`。桌面端显示这个 `message`；老版本服务没有发 `message` 时，退回原来的状态文字。分类代码在 `services/task-manager/src/chat-errors.ts`。
+
+**FastClaw v1.4.0 实际返回的内容。** 2026-11-02 用真实 gateway、假 key 和 mock 的 OpenAI 兼容上游测过：
+
+- 流式请求（界面用的就是流式）：HTTP 是 200，最后一个 chunk 是 `finish_reason:"stop"`，同时带 `"error":{"type":"server_error","code":"agent_error","message":"…"}`，然后是 `[DONE]`。
+- 非流式请求：HTTP 502，响应体是 `{"error":{"code":"agent_error","type":"server_error","message":"…"}}`，`message` 内容和流式一样。
+- `message` 的原文如下：
+
+| 上游情况 | `message`（原文） | 多久返回 |
+|---|---|---|
+| 401 密钥无效（DeepSeek 原样返回） | `API error 401: {"error": {"message": "Authentication Fails, Your api key: ****KEYZ is invalid", "type": "authentication_error", …}}` | 立刻 |
+| 402 余额不足 | `API error 402: {"error": {"message": "Insufficient Balance", "type": "unknown_error", …}}` | 立刻 |
+| 400 模型名不对 | `API error 400: {"error": {"message": "Model Not Exist", "type": "invalid_request_error", …}}` | 立刻 |
+| 404 | `API error 404: {… "code": "model_not_found"}` | 立刻 |
+| 429 限流 | `API error 429: {… "type": "rate_limit_reached_error", "code": "rate_limit_exceeded"}` | 约 60 秒（FastClaw 自己会重试） |
+| 500 | `API error 500: {…}` | 约 60 秒（会重试） |
+| 连接被拒 | `send request: Post "http://…/v1/chat/completions": dial tcp …: connect: connection refused` | 约 60 秒 |
+| 连接被断开 | `send request: Post "…": EOF` | 约 60 秒 |
+| 上游迟迟不返回响应头 | `send request: Post "…": net/http: timeout awaiting response headers`（gateway 日志里实测到的） | 每次尝试约 3 分钟，最多 6 次 |
+
+注意：上游的 401 文本里会带出 key 的末 4 位（`****KEYZ`）。所以上游原文一律不送到界面，界面只看到下表里的固定中文，再加上一个由数字和 `[a-z_]` 组成的错误码。
+
+**映射规则：**
+
+| reason | 匹配条件 | 界面显示 |
+|---|---|---|
+| `key_invalid` | `API error 401/403`，或者上游 `type` 是 `authentication_error` | 模型密钥无效，请到设置里更换 |
+| `insufficient_balance` | `API error 402`，或文本里有 Insufficient Balance / insufficient_quota | 模型账户余额不足，请充值后再试 |
+| `rate_limited` | `API error 429` | 模型服务限流了（请求太频繁），请稍等一会儿再试 |
+| `model_not_found` | `API error 404`、`model_not_found`，或 Model Not Exist / does not exist | 模型不存在，请到设置里检查模型名 |
+| `network` | `send request: …`，并且出现 refused / EOF / no such host / reset 等 | 连不上模型服务，请检查网络后再试 |
+| `timeout` | `API error 408/504`，或 timeout awaiting response headers / Client.Timeout / deadline exceeded | 模型服务响应超时，请稍后再试 |
+| `interrupted` | 流中途断了（`stream_truncated`） | 中断，结果未知 |
+| `runtime_unavailable` | 本地 FastClaw 连不上、超时，或者拒绝了 Heybe 的令牌（`fastclaw_401`） | 本地运行时未响应 |
+| `unknown` | 以上都不是 | 没做成，请稍后再试（错误码 `upstream_500`、`agent_error` 等） |
+
+**测试。** 单元测试在 `services/task-manager/test/chat-errors.test.ts`。上面这些原文分别按流式和 502 两种方式，经过真实的 adapter 解析后再分类。测试还断言输出里不含 key、`KEYZ`、令牌和上游原文。
+
+## gateway 日志里的 WARN「default model is missing the '<provider>/<model>' prefix」（Mac 复验问题 3）
+
+gateway 启动时，以及每次加载用户空间时，会打出这样一条日志：
+
+```
+level=WARN msg="no provider configured: default model is missing the '<provider>/<model>' prefix" defaultModel="" providerCount=1
+```
+
+**原因。** 这是 FastClaw v1.4.0（b5ad3df）`internal/gateway/userspace.go` 里的 `newProviderFromConfig`（第 1066 行）打出来的。`loadUserSpace`（第 739 行）用 system/user 范围的 `agents.defaults.model` 去建一个**共享的兜底 provider**。t021 只在 **Agent 范围**设了模型，没有设全局默认模型，所以这个值是空的（日志里 `defaultModel=""`）。拆不出 `<provider>/<model>`，函数就打 WARN 并返回 nil。
+
+**不是我们传的模型名少了前缀。** `t021-mac.sh` 传的是 `deepseek/deepseek-v4-flash`，前缀是带着的。
+
+**不影响对话。** 每个 Agent 实际用的 provider 来自 `internal/agent/manager.go:37` 的 `providerForAgent`：
+
+- 它用 Agent 自己的 `deepseek/deepseek-v4-flash` 找到 `deepseek` provider，并且这个 provider 有 key，就直接用它。
+- 只有找不到时，才会退回到上面那个共享兜底（也就是 nil）。
+
+实测：同一个 gateway 打着这条 WARN，对话照常走到上游（2026-11-02，换 key 实验里上游确实收到了请求）。
+
+**为什么不消掉这条告警。** 要消掉，就得写一个全局的 `agents.defaults.model`。这样会让所有没配 provider 的 Agent（以及以后新建的 Agent）都悄悄落到这个默认模型上，改变了 FastClaw 的兜底行为。为了一条无害的告警这样做不值得。FastClaw 也没有开关可以关掉这条日志。所以只在这里写明原因，看到它可以忽略。如果真的出现「agent has no provider configured」的 ERROR，那才说明 Agent 自己的 provider 或 key 没配好。
 
 ## 后续（不在本 PR）
 

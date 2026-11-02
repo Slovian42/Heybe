@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # T0.2.1 真机核验：DeepSeek 经 FastClaw v1.4.0 /v1 流式对话，一条命令跑完。
 # 用法: scripts/poc/t021-mac.sh [all|cleanup]
-#   all（默认）  预检 → 装/复用 FastClaw v1.4.0 → 独立 FASTCLAW_HOME 启动 gateway → agents init(DeepSeek)
+#   all（默认）  预检 → 装/复用 FastClaw v1.4.0 → 独立 FASTCLAW_HOME 启动 gateway → agents init(DeepSeek；
+#               已有同名 Agent 时带 --id 原地更新 key）→ 写 key 指纹 ${T021_HOME}/deepseek-key.sha256（600，只有哈希）
 #               → 自动生成 apikey（只写 600 文件）→ pnpm install → 跑 deepseek-min-chat.ts → 写报告 → 停 gateway
 #   cleanup      停 gateway；PURGE=1 时再删除 ${T021_HOME}（含 apikey 文件）
 # 密钥：DEEPSEEK_API_KEY 从 ${HEYBE_POC_ENV:-~/.heybe-poc.env} 读取（必须 600）；FastClaw apikey 自动生成。
 #       两者都不会打印、不写日志、不进报告。
 # 报告：${T021_HOME}/t021-report.txt（可直接回传）；最后一行 "T021 RESULT: ..." 也会打印在终端。
+# 退出码：0 通过；1 失败；3 已有 Agent 但原地更新失败（heybe-desktop-dev.sh 会把数据目录改名备份后重建）。
 # 兼容 macOS 自带 bash 3.2：路径展开一律 ${VAR}。
 set -euo pipefail
 umask 077
@@ -15,12 +17,19 @@ FASTCLAW_VERSION="v1.4.0"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=lib-fc-env.sh
 . "${REPO_ROOT}/scripts/poc/lib-fc-env.sh"
+# shellcheck source=lib-fc-agent.sh
+. "${REPO_ROOT}/scripts/poc/lib-fc-agent.sh"
+# shellcheck source=lib-fc-key.sh
+. "${REPO_ROOT}/scripts/poc/lib-fc-key.sh"
 POC_ENV="${HEYBE_POC_ENV:-$HOME/.heybe-poc.env}"
 T021_HOME="${HEYBE_T021_HOME:-$HOME/.local/opt/heybe-t021}"
 FC_HOME="${T021_HOME}/fastclaw-home"
 FC_BIN_DIR="$HOME/.local/opt/fastclaw/bin"            # 与 boxlite-poc.sh 共用安装位置
 PORT="${HEYBE_T021_PORT:-18963}"                       # 避开默认 18953 与沙箱 PoC
 AGENT="${HEYBE_T021_AGENT:-heybe-t021}"
+# Agent-scope model, already "<provider>/<model>". The gateway WARN "default model is missing the
+# '<provider>/<model>' prefix" is about the unset global agents.defaults.model and is harmless;
+# see docs/t19-desktop-chat.md (Mac 复验问题 3).
 MODEL="${HEYBE_T021_MODEL:-deepseek/deepseek-v4-flash}"
 KEY_FILE="${T021_HOME}/fastclaw-apikey"
 LOG="${T021_HOME}/t021.log"
@@ -38,7 +47,7 @@ result() { # status code
 }
 die() { # code message
   printf '\033[31m失败\033[0m [%s] %s\n' "$1" "$2" >&2
-  result FAIL "$1"; stop_gateway; exit 1
+  result FAIL "$1"; stop_gateway; exit "${DIE_RC:-1}"
 }
 ok() { printf '\033[32m通过\033[0m %s\n' "$*"; }
 file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
@@ -47,13 +56,16 @@ stop_gateway() {
   if [ -f "${PID_FILE}" ]; then kill "$(cat "${PID_FILE}")" 2>/dev/null || true; rm -f "${PID_FILE}"; fi
 }
 
+# 只读进 shell 变量，不 export：只有 fc_env_exec DEEPSEEK_API_KEY 的那一次 agents init 能拿到
 load_deepseek() {
-  [ -f "${POC_ENV}" ] || die E_ENV_MISSING "找不到 ${POC_ENV}"
-  [ "$(file_mode "${POC_ENV}")" = 600 ] || die E_ENV_PERM "${POC_ENV} 权限必须是 600"
-  local v; v=$(sed -n 's/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}DEEPSEEK_API_KEY=//p' "${POC_ENV}" | tail -1)
-  v=${v%\"}; v=${v#\"}; v=${v%\'}; v=${v#\'}
-  [ -n "$v" ] || die E_ENV_EMPTY "${POC_ENV} 里没有 DEEPSEEK_API_KEY="
-  export DEEPSEEK_API_KEY="$v"
+  local rc=0
+  heybe_load_poc_key "${POC_ENV}" || rc=$?
+  case "$rc" in
+    0) ;;
+    2) die E_ENV_MISSING "找不到 ${POC_ENV}" ;;
+    3) die E_ENV_PERM "${POC_ENV} 权限必须是 600" ;;
+    *) die E_ENV_EMPTY "${POC_ENV} 里没有 DEEPSEEK_API_KEY=" ;;
+  esac
 }
 
 install_fastclaw() {
@@ -98,15 +110,19 @@ step_all() {
   ok "FastClaw gateway 已在 127.0.0.1:${PORT} 启动（独立数据目录）"
 
   STEP="agent"
-  # init 输出可能含自动生成的控制台密码：只留在内存，不落盘；key 只传给这一次 init
-  local init_out init_rc=0
-  init_out=$(fc_env_exec DEEPSEEK_API_KEY fastclaw agents init "${AGENT}" --provider deepseek --model "${MODEL}" --api-key-env DEEPSEEK_API_KEY 2>&1) || init_rc=$?
-  # shellcheck disable=SC2034 # 故意清空：密码不留在变量里
-  init_out=""
+  # 已有同名 Agent（上次建过）→ 带 --id 原地更新 key，不生成新密码；init 输出（可能含密码）不落盘。
+  # gateway 已经在跑，CLI 会给它发 SIGHUP，新 key 立刻生效，也不会另起 daemon。
+  local verb init_rc=0
+  verb=$(heybe_fc_agent_upsert fastclaw "${AGENT}" "${MODEL}" "${PORT}") || init_rc=$?
+  if [ "${init_rc}" = 0 ]; then heybe_key_save_fp "${T021_HOME}" DEEPSEEK_API_KEY || init_rc=$?; fi
   unset DEEPSEEK_API_KEY
   fc_lock_home "${FC_HOME}"
-  [ "${init_rc}" = 0 ] || die E_AGENT_INIT "agents init 失败（退出码 ${init_rc}）"
-  ok "Agent ${AGENT} 已配置 DeepSeek（${MODEL}）"
+  if [ "${init_rc}" != 0 ]; then
+    [ -n "$(fastclaw agents list 2>/dev/null | grep -o 'agt_[A-Za-z0-9_-]*' | head -1 || true)" ] && DIE_RC=3
+    die E_AGENT_INIT "agents init 失败（退出码 ${init_rc}）"
+  fi
+  if [ "${verb}" = updated ]; then ok "Agent ${AGENT} 已更新 DeepSeek key（${MODEL}）"; else ok "Agent ${AGENT} 已配置 DeepSeek（${MODEL}）"; fi
+  ok "key 指纹已写入 $(heybe_key_fp_file "${T021_HOME}")（600，只有 sha256）"
 
   STEP="apikey"
   if [ ! -s "${KEY_FILE}" ]; then
@@ -125,7 +141,7 @@ step_all() {
 
   STEP="chat"
   local json rc=0 agent_id
-  agent_id=$(fastclaw agents list 2>/dev/null | grep -o 'agt_[A-Za-z0-9_-]*' | head -1 || true)
+  agent_id=$(fc_resolve_agent_id "${PORT}" "${AGENT}" fastclaw 2>/dev/null || true)
   json=$( cd "${REPO_ROOT}" && env -u DEEPSEEK_API_KEY \
       HEYBE_FASTCLAW_BASE_URL="http://127.0.0.1:${PORT}" \
       HEYBE_FASTCLAW_CHAT_TOKEN="$(cat "${KEY_FILE}")" \
@@ -144,6 +160,9 @@ step_all() {
     STEP="done"; ok "流式对话成功：${summary}"; result PASS none
   else
     local code; code=$(printf '%s' "${summary}" | sed -n 's/.*error_code=\([^ ]*\).*/\1/p'); code=${code:-unknown}
+    if grep -q 'API error 401' "${T021_HOME}/gateway.log" 2>/dev/null; then
+      die "E_CHAT_${code}" "DeepSeek 拒绝了这个 key（上游 401）：请到 ${POC_ENV} 换成有效的 DEEPSEEK_API_KEY（保持 600），再重跑"
+    fi
     die "E_CHAT_${code}" "对话未成功：${summary}"
   fi
   echo "报告：${REPORT}"

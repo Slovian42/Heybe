@@ -72,8 +72,30 @@ describe("chat SSE API", () => {
     const text = await (await post(base, "s1", "hi")).text();
     expect(text).not.toContain("secret upstream text");
     const lines = dataLines(text);
-    expect(JSON.parse(lines[1]!)).toEqual({ type: "error", kind: "interrupted", message: "中断，结果未知" });
+    expect(JSON.parse(lines[1]!)).toEqual({ type: "error", kind: "interrupted", reason: "interrupted", message: "中断，结果未知" });
     expect(lines.at(-1)).toBe("[DONE]");
+  });
+
+  it("sends the specific reason for an upstream 401 (agent_error), without the upstream text", async () => {
+    // eslint-disable-next-line require-yield -- fails before the first event, like an upstream 401
+    const base = await start(async function* () {
+      throw Object.assign(
+        new Error(
+          'FastClaw POST /v1/chat/completions failed (5xx): agent_error: API error 401: {"error": {"message": "Authentication Fails, Your api key: ****KEYZ is invalid", "type": "authentication_error"}}',
+        ),
+        { kind: "5xx", status: 200, code: "agent_error" },
+      );
+    });
+    const text = await (await post(base, "s4", "hi")).text();
+    expect(text).not.toContain("KEYZ");
+    expect(text).not.toContain("Authentication Fails");
+    expect(JSON.parse(dataLines(text)[0]!)).toEqual({
+      type: "error",
+      kind: "failed",
+      reason: "key_invalid",
+      code: "upstream_401",
+      message: "模型密钥无效，请到设置里更换",
+    });
   });
 
   it("aborts the upstream stream when the client disconnects (stop)", async () => {
@@ -102,6 +124,6 @@ describe("chat SSE API", () => {
 
   it("classifies errors without upstream text", () => {
     expect(classifyChatError({ kind: "timeout" }).kind).toBe("unavailable");
-    expect(classifyChatError({ kind: "5xx", code: "x" })).toEqual({ kind: "failed", message: "没做成" });
+    expect(classifyChatError({ kind: "5xx", code: "x" })).toEqual({ kind: "failed", reason: "unknown", code: "x", message: "没做成，请稍后再试（错误码 x）" });
   });
 });

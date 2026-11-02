@@ -23,7 +23,9 @@ jobs:
       - name: shell mock tests
         run: |
           for t in scripts/dev/node-check-mock-test.sh scripts/mirror-mock-test.sh \
-                   scripts/poc/fc-agent-mock-test.sh scripts/poc/report-table-test.sh scripts/poc/t032-mock-test.sh; do
+                   scripts/poc/fc-agent-mock-test.sh scripts/poc/key-sync-mock-test.sh \
+                   scripts/poc/report-table-test.sh scripts/poc/t032-mock-test.sh \
+                   scripts/poc/argv-secret-mock-test.sh; do
             echo "== $t"; bash "$t"
           done
   dco:

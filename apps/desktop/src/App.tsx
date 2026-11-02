@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { streamChat } from "./chat/client";
-import { STATUS_TEXT, WARN_TOOLS, chatReducer, initialChatState, type ChatMessage } from "./chat/state";
+import { WARN_TOOLS, chatReducer, initialChatState, statusText, type ChatMessage } from "./chat/state";
 import { bannerText, inTauri, loadServiceInfo, type ServiceInfo } from "./config";
 
 // The UI talks only to the local Heybe service, never to FastClaw's web/ console.
@@ -28,7 +28,11 @@ function Message({ m }: { m: ChatMessage }) {
       )}
       {/* Rendered as plain text: no raw HTML ever reaches the DOM (XSS-safe). */}
       <div className="text">{m.text || (m.status === "streaming" ? "…" : "")}</div>
-      {STATUS_TEXT[m.status] && <div className="status">{STATUS_TEXT[m.status]}</div>}
+      {statusText(m) && (
+        <div className="status" data-reason={m.error?.reason}>
+          {statusText(m)}
+        </div>
+      )}
     </div>
   );
 }
