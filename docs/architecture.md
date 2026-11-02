@@ -67,6 +67,6 @@ SQLite + 全文检索；按权限读、检索、提交、修正、删除；用�
 
 | 例外 | 原因 | 约束 | 批准 |
 |---|---|---|---|
-| 建或更新绑定提供方的 Agent 用本机命令行 `fastclaw agents init`（`services/task-manager/src/provider-provisioner.ts`） | FastClaw v1.4.0 的 `/v1` 没有设置提供方的接口，`/v1/agents` 不接受 provider、key、base | 密钥只放子进程环境变量 `HEYBE_PROVIDER_KEY`，argv 只带变量名，`ps` 看不到；子进程环境走白名单；CLI 输出只取 `Agent ID:`，不写日志。对话仍只走 `/v1`。详见 [providers/README.md](providers/README.md#决定-2建-agent-走本机-fastclaw-agents-init只通过-v1-调用的例外) | Yang，2026-11-02 |
+| 建或更新绑定提供方的 Agent 用本机命令行 `fastclaw agents init`（`services/task-manager/src/provider-provisioner.ts`） | FastClaw v1.4.0 的 `/v1` 没有设置提供方的接口，`/v1/agents` 不接受 provider、key、base | 密钥只放子进程环境变量 `HEYBE_PROVIDER_KEY`，argv 只带变量名，`ps` 看不到；子进程环境走白名单；开发脚本（t021 / `heybe-desktop-dev.sh`）里同样的 `agents init` 经 `scripts/poc/lib-fc-env.sh` 的 `fc_env_exec` 调用：在子 shell 里用内建 `export` / `export -n` 留下白名单变量后直接 `exec`，不经 `env -i K=V`（那样值会出现在 `env` 进程的 argv 里；2026-11-02 已改，`scripts/poc/argv-secret-mock-test.sh` 检查）；CLI 输出只取 `Agent ID:`，不写日志。对话仍只走 `/v1`。详见 [providers/README.md](providers/README.md#决定-2建-agent-走本机-fastclaw-agents-init只通过-v1-调用的例外) | Yang，2026-11-02 |
 
 相关约束：FastClaw 的提供方配置按名称全局共享，所以每种内置提供方只配一个密钥，自定义兼容接口按配置 id 命名、可多个（同上文档“决定 1”，Yang 2026-11-02）。

@@ -17,6 +17,8 @@ set -uo pipefail
 umask 077
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=../poc/lib-fc-env.sh
+. "${ROOT}/scripts/poc/lib-fc-env.sh"
 MOCK=0 YES=0 SKIP_OLLAMA=0
 for a in "$@"; do
   case "$a" in
@@ -127,7 +129,8 @@ if [ "$MOCK" = 0 ]; then
 else
   TM_ENV+=(HEYBE_PROVIDERS_MOCK=1 HEYBE_OLLAMA_MODEL="$OLLAMA_MODEL" HEYBE_MOCK_OLLAMA_CTX="${HEYBE_MOCK_OLLAMA_CTX:-16384}")
 fi
-( cd "${ROOT}/services/task-manager" && exec env -i "${TM_ENV[@]}" "$TSX" dev/providers-server.ts ) >"${WORK}/tm.out" 2>"${WORK}/tm.err" &
+# TM_ENV 里有 FastClaw 令牌：只经环境继承交给任务服务（fc_env_only_kv 用内建 export），不进 argv。
+( cd "${ROOT}/services/task-manager" && fc_env_only_kv "${TM_ENV[@]}" && exec "$TSX" dev/providers-server.ts ) >"${WORK}/tm.out" 2>"${WORK}/tm.err" &
 TM_PID=$!
 TM_PORT=""
 for _ in $(seq 80); do TM_PORT="$(sed -n 's/^PORT=//p' "${WORK}/tm.out" 2>/dev/null)"; [ -n "$TM_PORT" ] && break; sleep 0.25; done
@@ -190,7 +193,12 @@ ok "已停止任务服务${MOCK:+}$([ "$MOCK" = 0 ] && echo '和临时 FastClaw�
   echo "- 本报告不含任何密钥，只含后 4 位。"
 } >>"$REPORT"
 chmod 600 "$REPORT"
-if grep -qF -- "$KEY" "$REPORT" || { [ -n "${HEYBE_FASTCLAW_CHAT_TOKEN:-}" ] && grep -qF -- "$HEYBE_FASTCLAW_CHAT_TOKEN" "$REPORT"; }; then
+# 用 bash 自己比对（$(<file) 不起新进程），不把 key / 令牌当 grep 的参数。
+REPORT_TEXT="$(<"$REPORT")"
+case "$REPORT_TEXT" in *"$KEY"*) LEAK=1 ;; *) LEAK=0 ;; esac
+if [ -n "${HEYBE_FASTCLAW_CHAT_TOKEN:-}" ]; then case "$REPORT_TEXT" in *"$HEYBE_FASTCLAW_CHAT_TOKEN"*) LEAK=1 ;; esac; fi
+REPORT_TEXT=""
+if [ "$LEAK" = 1 ]; then
   rm -f "$REPORT"; bad "报告里检测到密钥，已删除报告"; exit 1
 fi
 KEY=""

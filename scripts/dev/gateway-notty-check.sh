@@ -8,6 +8,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=../poc/lib-fc-env.sh
+. "$REPO_ROOT/scripts/poc/lib-fc-env.sh"
 FC="${FASTCLAW_BIN:-$(command -v fastclaw || true)}"
 [ -n "$FC" ] && [ -x "$FC" ] || { echo "✗ 找不到 fastclaw（设 FASTCLAW_BIN）" >&2; exit 2; }
 TSX="$REPO_ROOT/services/task-manager/node_modules/.bin/tsx"
@@ -44,9 +46,10 @@ while curl -s -m 1 -o /dev/null "http://127.0.0.1:${PORT}/healthz" || pgrep -f "
 done
 
 TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
-env -i PATH="$PATH" HOME="$WORK" FASTCLAW_HOME="$WORK/fastclaw" FASTCLAW_PORT="$PORT" FASTCLAW_BIND=loopback \
-  HEYBE_FASTCLAW_GATEWAY_BIN="$FC" HEYBE_SERVICE_TOKEN="$TOKEN" HEYBE_SERVICE_PORT=0 \
-  "${NOTTY[@]}" "$TSX" "$REPO_ROOT/services/task-manager/src/main.ts" </dev/null >"$WORK/out.log" 2>"$WORK/err.log" &
+# HEYBE_SERVICE_TOKEN 只经环境继承交给服务（fc_env_only_kv 用内建 export），不进 env 的 argv。
+( fc_env_only_kv PATH="$PATH" HOME="$WORK" FASTCLAW_HOME="$WORK/fastclaw" FASTCLAW_PORT="$PORT" FASTCLAW_BIND=loopback \
+    HEYBE_FASTCLAW_GATEWAY_BIN="$FC" HEYBE_SERVICE_TOKEN="$TOKEN" HEYBE_SERVICE_PORT=0 \
+  && exec "${NOTTY[@]}" "$TSX" "$REPO_ROOT/services/task-manager/src/main.ts" ) </dev/null >"$WORK/out.log" 2>"$WORK/err.log" &
 SVC_PID=$!
 
 i=0

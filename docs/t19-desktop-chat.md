@@ -61,7 +61,7 @@ Tauri 壳（src-tauri/src/service.rs，Supervisor）
   - 每次启动比对 `~/.heybe-poc.env` 里 key 的 sha256 和 `~/.local/opt/heybe-t021/deepseek-key.sha256`（一行 `sha256:<hex>`，权限 600，不存明文也不存末 4 位）。
   - 没变：直接复用。变了，或者没有指纹文件（旧版本建的目录）：重跑 t021。t021 现在先按名字查 Agent id，已有就带 `--id` 原地更新，然后做一次真实流式对话，成功写指纹。
   - 原地更新失败（t021 以退出码 3 结束）：把旧目录改名为 `heybe-t021.bak-<时间>`（不删），再完整重建一次。
-  - key 只在 shell 变量里，经 `fc_env_exec` 只交给那一次 `agents init` 子进程；`agents init` 的输出（新建时含管理员密码）整段丢弃。
+  - key 只在 shell 变量里，经 `fc_env_exec` 只交给那一次 `agents init` 子进程：只走环境继承（子 shell 里内建 `export` / `export -n` 后 `exec`），不进任何进程的 argv（以前用 `env -i K=V`，key 会出现在 `env` 的命令行里，2026-11-02 改；`scripts/poc/argv-secret-mock-test.sh` 检查）；`agents init` 的输出（新建时含管理员密码）整段丢弃。
   - 启动时连接测试：用 key 调一次 DeepSeek `GET /models`（不花钱），HTTP 401/403 → 红色 `✗ [E_KEY_INVALID]`，中文提示到 `~/.heybe-poc.env` 换 key；连不上或其他状态码只给黄色提示、继续启动。`HEYBE_SKIP_KEY_TEST=1` 跳过。
 - #85 的 provisioner（设置页“测试连接”）：每次测试都用当前 key 跑一次 `agents init`，已存在时按 `already exists (id …)` 带 `--id` 重试，所以不会卡在旧 key（加了单测：换 key 后第二次测试带 `--id` 且子进程拿到新 key）。注意 FastClaw 的 key 是按提供方名字存的：同一个 `FASTCLAW_HOME` 里测试 `deepseek` 会同时更新聊天 Agent 用的 deepseek key（这正是“一提供方一把 key”的设计）。设置页保存 key（`PUT /providers/keys/:ref`）目前只写钥匙串，还没接到聊天 Agent（首启引导 19-g / #16-c 再接）。
 - 测试：`scripts/poc/key-sync-mock-test.sh`（假 fastclaw + 假 DeepSeek，CI 里跑）。
