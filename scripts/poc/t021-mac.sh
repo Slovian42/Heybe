@@ -27,6 +27,9 @@ FC_HOME="${T021_HOME}/fastclaw-home"
 FC_BIN_DIR="$HOME/.local/opt/fastclaw/bin"            # 与 boxlite-poc.sh 共用安装位置
 PORT="${HEYBE_T021_PORT:-18963}"                       # 避开默认 18953 与沙箱 PoC
 AGENT="${HEYBE_T021_AGENT:-heybe-t021}"
+# Agent-scope model, already "<provider>/<model>". The gateway WARN "default model is missing the
+# '<provider>/<model>' prefix" is about the unset global agents.defaults.model and is harmless;
+# see docs/t19-desktop-chat.md (Mac 复验问题 3).
 MODEL="${HEYBE_T021_MODEL:-deepseek/deepseek-v4-flash}"
 KEY_FILE="${T021_HOME}/fastclaw-apikey"
 LOG="${T021_HOME}/t021.log"

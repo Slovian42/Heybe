@@ -106,6 +106,27 @@ Tauri 壳（src-tauri/src/service.rs，Supervisor）
 
 **测试。** 单元测试在 `services/task-manager/test/chat-errors.test.ts`。上面这些原文分别按流式和 502 两种方式，经过真实的 adapter 解析后再分类。测试还断言输出里不含 key、`KEYZ`、令牌和上游原文。
 
+## gateway 日志里的 WARN「default model is missing the '<provider>/<model>' prefix」（Mac 复验问题 3）
+
+gateway 启动时，以及每次加载用户空间时，会打出这样一条日志：
+
+```
+level=WARN msg="no provider configured: default model is missing the '<provider>/<model>' prefix" defaultModel="" providerCount=1
+```
+
+**原因。** 这是 FastClaw v1.4.0（b5ad3df）`internal/gateway/userspace.go` 里的 `newProviderFromConfig`（第 1066 行）打出来的。`loadUserSpace`（第 739 行）用 system/user 范围的 `agents.defaults.model` 去建一个**共享的兜底 provider**。t021 只在 **Agent 范围**设了模型，没有设全局默认模型，所以这个值是空的（日志里 `defaultModel=""`）。拆不出 `<provider>/<model>`，函数就打 WARN 并返回 nil。
+
+**不是我们传的模型名少了前缀。** `t021-mac.sh` 传的是 `deepseek/deepseek-v4-flash`，前缀是带着的。
+
+**不影响对话。** 每个 Agent 实际用的 provider 来自 `internal/agent/manager.go:37` 的 `providerForAgent`：
+
+- 它用 Agent 自己的 `deepseek/deepseek-v4-flash` 找到 `deepseek` provider，并且这个 provider 有 key，就直接用它。
+- 只有找不到时，才会退回到上面那个共享兜底（也就是 nil）。
+
+实测：同一个 gateway 打着这条 WARN，对话照常走到上游（2026-11-02，换 key 实验里上游确实收到了请求）。
+
+**为什么不消掉这条告警。** 要消掉，就得写一个全局的 `agents.defaults.model`。这样会让所有没配 provider 的 Agent（以及以后新建的 Agent）都悄悄落到这个默认模型上，改变了 FastClaw 的兜底行为。为了一条无害的告警这样做不值得。FastClaw 也没有开关可以关掉这条日志。所以只在这里写明原因，看到它可以忽略。如果真的出现「agent has no provider configured」的 ERROR，那才说明 Agent 自己的 provider 或 key 没配好。
+
 ## 后续（不在本 PR）
 
 - 19-c 余下：菜单栏图标。
