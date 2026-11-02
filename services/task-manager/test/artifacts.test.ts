@@ -130,7 +130,7 @@ describe("FastClawNodeExecutor artifacts (#12)", () => {
     expect(t.calls[1]).toMatch(/^\/v1\/agents\/agent-1\/sessions\/.+\/files\/report\.md$/);
     const saved = new EventRepository(t.db).listByTask(r.request.taskId).find((e) => e.type === FastClawEventType.ArtifactSaved);
     const path = (saved?.data as { path: string }).path;
-    expect(path).toBe(join(t.root, r.request.taskId, "report.md"));
+    expect(path).toBe(join(t.root, r.request.taskId, r.request.attemptId, "report.md"));
     expect(readFileSync(path, "utf8")).toBe("# 报告");
   });
 

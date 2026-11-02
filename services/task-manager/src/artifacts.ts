@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -57,6 +58,8 @@ export function normalizeContentType(contentType: string | null | undefined, nam
 export interface SaveArtifactInput {
   root: string;
   taskId: string;
+  /** #23: when set, files go to `<root>/<taskId>/<attemptId>/<name>` so retries never overwrite. */
+  attemptId?: string;
   name: string;
   bytes: Uint8Array;
   contentType: string | null;
@@ -68,6 +71,12 @@ export interface SavedArtifact {
   size: number;
   path: string;
   contentType: string;
+  /** Hex sha256 of the bytes written (#23). */
+  sha256: string;
+}
+
+export function sha256Hex(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 /** Validate then write `<root>/<taskId>/<name>` with dir 700 / file 600 (atomic rename). */
@@ -83,20 +92,24 @@ export function saveArtifact(input: SaveArtifactInput): SavedArtifact {
     throw new ArtifactError("artifact_bad_type", `产物类型不允许：${contentType.slice(0, 64)}`);
   }
   const root = resolve(input.root);
-  const dir = resolve(root, input.taskId);
+  if (input.attemptId !== undefined && !TASK_ID_RE.test(input.attemptId)) {
+    throw new ArtifactError("artifact_bad_name", "尝试 id 不合法");
+  }
+  const taskDir = resolve(root, input.taskId);
+  const dir = input.attemptId === undefined ? taskDir : resolve(taskDir, input.attemptId);
   const file = resolve(dir, name);
-  if (!dir.startsWith(root + sep) || !file.startsWith(dir + sep)) {
+  if (!taskDir.startsWith(root + sep) || !dir.startsWith(taskDir) || !file.startsWith(dir + sep)) {
     throw new ArtifactError("artifact_bad_name", "产物路径越界");
   }
-  mkdirSync(root, { recursive: true, mode: 0o700 });
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  chmodSync(root, 0o700);
-  chmodSync(dir, 0o700);
+  for (const d of [root, taskDir, dir]) {
+    mkdirSync(d, { recursive: true, mode: 0o700 });
+    chmodSync(d, 0o700);
+  }
   const tmp = `${file}.tmp-${process.pid}`;
   writeFileSync(tmp, input.bytes, { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, file);
-  return { name, size: input.bytes.byteLength, path: file, contentType };
+  return { name, size: input.bytes.byteLength, path: file, contentType, sha256: sha256Hex(input.bytes) };
 }
 
 /**

@@ -66,5 +66,21 @@ export {
   defaultReportsRoot,
   normalizeContentType,
   saveArtifact,
+  sha256Hex,
   type SavedArtifact,
 } from "./artifacts.js";
+export {
+  ReviewEventType,
+  acceptNode,
+  checkNodeArtifacts,
+  isFileName,
+  listArtifacts,
+  recordArtifact,
+  rejectNode,
+  type ArtifactCheck,
+  type ArtifactProblem,
+  type ArtifactProblemCode,
+  type ArtifactRecord,
+  type RecordArtifactInput,
+  type ReviewResult,
+} from "./review.js";

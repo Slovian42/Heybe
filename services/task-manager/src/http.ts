@@ -16,6 +16,7 @@ import {
 import { EventRepository } from "./events.js";
 import { NodeRepository } from "./nodes.js";
 import { TaskRepository } from "./tasks.js";
+import { acceptNode, checkNodeArtifacts, listArtifacts, rejectNode } from "./review.js";
 
 const MAX_BODY = 1_000_000;
 
@@ -223,7 +224,39 @@ async function handle(
     return;
   }
 
-  if (one || cancel) {
+  // #23: artifact list + human review. Artifact paths are local to this machine (loopback only).
+  const arts = /^\/tasks\/([^/]+)\/artifacts$/.exec(url.pathname);
+  if (arts && method === "GET") {
+    const id = decodeId(arts[1] ?? "");
+    if (!tasks.get(id)) throw new NotFoundError(`task not found: ${id}`);
+    sendJson(res, 200, { artifacts: listArtifacts(db, id) });
+    return;
+  }
+
+  const review = /^\/nodes\/([^/]+)\/(review|accept|reject)$/.exec(url.pathname);
+  if (review && (method === "GET" ? review[2] === "review" : method === "POST" && review[2] !== "review")) {
+    const id = decodeId(review[1] ?? "");
+    if (!nodes.get(id)) throw new NotFoundError(`node not found: ${id}`);
+    if (review[2] === "review") {
+      sendJson(res, 200, { node: nodes.get(id), check: checkNodeArtifacts(db, id) });
+      return;
+    }
+    const raw = await readBody(req);
+    const parsed = raw.length === 0 ? {} : asRecord(JSON.parse(raw) as unknown, "body");
+    if (review[2] === "accept") {
+      const result = acceptNode(db, id, { note: optionalString(parsed.note, "note") });
+      // 422: the reviewer asked for success but files are missing/changed; node is now needs_check.
+      sendJson(res, result.accepted ? 200 : 422, result);
+      return;
+    }
+    const rework = parsed.rework;
+    if (rework !== undefined && typeof rework !== "boolean") throw new ValidationError("rework must be a boolean");
+    const node = rejectNode(db, id, { reason: optionalString(parsed.reason, "reason"), rework: rework === true });
+    sendJson(res, 200, { node });
+    return;
+  }
+
+  if (one || cancel || arts || review) {
     sendJson(res, 405, { error: "method not allowed" });
     return;
   }
