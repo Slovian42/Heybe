@@ -59,3 +59,4 @@ export type {
   V1TurnFile,
   V1Usage,
 } from "@heybe/shared-types";
+export { redactSecrets } from "./redact.js";
