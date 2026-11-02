@@ -35,8 +35,9 @@ Tauri 壳（src-tauri/src/service.rs，Supervisor）
   - 端口被别的程序占着（或 gateway 打出 `address already in use`）→ `E_FC_PORT_BUSY`，提示 `lsof -nP -iTCP:<端口> -sTCP:LISTEN`。
   - 自己拉起的 gateway 健康后再核对一次 `/api/status` 版本，不一致 → 停掉它，`E_FC_VERSION_MISMATCH`。
   - 30 秒没就绪 → 停掉它，`E_FC_READY_TIMEOUT`；没就绪就退出 → `E_FC_EXITED`（带 stderr 末尾）。
+  - gateway 就绪后每次都检查 camoufox-cli 浏览器技能是关的（`architecture.md` §3.10 第二个例外，`fastclaw-skills.ts`）：`get` → 需要时 `set false` → 读回 `false`，stderr 一行 `heybe-service: camoufox-cli 技能已关闭（读回 skills.entries.camoufox-cli.enabled=false，agent <id>）`；还没有 Agent 时跳过。写失败或读回不是 `false` → 停掉 gateway，`E_FC_SKILL_DISABLE_FAILED`（不可重试）。
   - 注意：FastClaw v1.4.0 官方发布包的 gateway 在 `/api/status` 报 `"version":"dev"`（发布构建只注入了 `main.version`，没注入 `buildinfo.Version`），所以 FastClaw 自己会打 `gateway is running FastClaw dev but this CLI is v1.4.0` 的假警告。我们把 `dev`/空当作“版本未知”，不算不一致。
-  - 启动失败时服务在标准输出打一行 `HEYBE_SERVICE_ERROR {"code","message","retryable"}`；端口/版本三类不可重试，退出码 3。
+  - 启动失败时服务在标准输出打一行 `HEYBE_SERVICE_ERROR {"code","message","retryable"}`；端口/版本三类和 `E_FC_SKILL_DISABLE_FAILED` 不可重试，退出码 3。
 - 壳（Supervisor）：
   - 等 READY 默认 60 秒（`HEYBE_SERVICE_READY_TIMEOUT_MS` 可改，要比服务里等 gateway 的 30 秒长）；服务没打 READY 就退出会立刻发现，不再空等。
   - **报 READY 之前不做健康检查**；READY 后第一次 `/health` 成功前有 10 秒宽限，宽限内失败不计数。

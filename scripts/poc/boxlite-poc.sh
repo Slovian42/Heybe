@@ -421,7 +421,8 @@ start_fastclaw() { # backend
 # v1 关闭 camoufox-cli 浏览器技能（#7）。skills.entries 是系统作用域（FC:internal/agentcli/agentcli.go
 #   systemSettingNamespaces），enabled:false 时技能加载器把它当禁用（FC:internal/agent/skills.go:209–213），
 #   技能目录里不再列出它（mock LLM 抓系统提示核对过）。镜像里的二进制仍在、系统提示固定段仍提到它，
-#   真正的约束是沙箱出网关闭（proxy 强制 network.mode=disabled）。产品侧同样的 CLI 调用属于新例外，等 Yang 批准。
+#   真正的约束是沙箱出网关闭（proxy 强制 network.mode=disabled）。产品侧同样的 CLI 调用是已批准的第二个例外（Yang 2026-11-02，
+#   architecture.md §3.10），实现在 services/task-manager/src/fastclaw-skills.ts（每次启动都查）。
 CAMOUFOX_KEY=skills.entries.camoufox-cli.enabled
 camoufox_off() { # backend（fc_env 已导出）
   fastclaw agents config "$AGENT_NAME" set "$CAMOUFOX_KEY" false >/dev/null 2>&1 \

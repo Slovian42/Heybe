@@ -168,7 +168,7 @@
 | 阶段 | 内容 | 产出 |
 |---|---|---|
 | 0（现在，开发） | 开发者使用 OrbStack 和 docker 后端（已经写在 phase0-dev-env.md）。Slovian Inc 需要购买 OrbStack Pro 许可。 | 开发环境 |
-| 1（2 周内，PoC） | 在 Apple Silicon Mac 上跑 `boxlite serve`，再用 FastClaw v1.4.0 的 boxlite 后端完整跑一遍：exec 流式输出、文件读写、camoufox（v1 关闭该技能，见 `t032-tool-isolation.md` 第 4 行）、端口预览。同时用 Lima vz + dockerd 做对照测试。 | 实测报告，以及选型定稿 |
+| 1（2 周内，PoC） | 在 Apple Silicon Mac 上跑 `boxlite serve`，再用 FastClaw v1.4.0 的 boxlite 后端完整跑一遍：exec 流式输出、文件读写、camoufox（v1 关闭该技能：产品侧 task-manager 每次启动用 `agents config … set skills.entries.camoufox-cli.enabled false` 并读回检查，`architecture.md` §3.10 第二个例外；见 `t032-tool-isolation.md` 第 4 行）、端口预览。同时用 Lima vz + dockerd 做对照测试。 | 实测报告，以及选型定稿 |
 | 2（里程碑内，打包） | Tauri sidecar 管理 boxlite（或 Lima）的生命周期；Developer ID 签名、hypervisor/virtualization entitlement、公证；首次运行时下载并预取沙箱镜像，带进度提示；系统和芯片检测（只出 arm64 包；Intel Mac 不支持，不做 x64 后备分支）。 | 可公证的 .dmg |
 | 3（之后） | MCP 放进沙箱运行；用 sandbox-exec 再包一层 VM 辅助进程；评估 apple/container 作为 macOS 26 的可选后端；Pro 版提供云沙箱兜底。 | 纵深防御，覆盖更多机型 |
 
@@ -183,5 +183,5 @@
 7. apple/container 有没有 Docker API 兼容层；macOS 15 下的实际限制。
 8. App Sandbox 和 Virtualization.framework、本地守护进程能否共存。
 9. `sandbox-exec` 在 macOS 26 上的状态，以及 Apple 有没有移除计划。
-10. FastClaw v1.4.0 有没有沙箱外的原生浏览器工具（目前只看到 camoufox-cli 跑在镜像内）。
+10. FastClaw v1.4.0 有没有沙箱外的原生浏览器工具（目前只看到 camoufox-cli 跑在镜像内；v1 已在产品侧关闭该技能并读回检查，见 `architecture.md` §3.10）。
 11. FastClaw Community License 的附加条款对把 FastClaw 和 BoxLite 一起捆绑分发有没有限制（需要法务看 `FC:LICENSE` 全文）。
