@@ -41,6 +41,8 @@
 
 ## 3. 待 #6 一起实测的清单
 
+第 1 项由 `boxlite-poc.sh verify boxlite` 验证2 覆盖；其余 4 项由 `scripts/poc/t032-runtime-checks.sh` 在 BoxLite 强制沙箱下实测（先跑 `boxlite-poc.sh rerun-boxlite`），结果写 `~/.local/opt/heybe-poc/t032-report.md` 并并入 `report.md`。干跑测试：`scripts/poc/t032-mock-test.sh`。
+
 - [ ] 强制模式 + BoxLite：`exec` 写的文件不出现在宿主机、`exec` 不能访问宿主机 `~`
 - [ ] 文件工具写 `~/Documents/heybe-probe.txt`：预期**落到宿主机**（验证 B1）
 - [ ] 沙箱镜像内有无 `camoufox-cli`
