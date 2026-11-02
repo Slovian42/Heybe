@@ -62,6 +62,8 @@ export PATH="$BOXLITE_DIR:$FASTCLAW_DIR:$PATH"
 pass() { printf '\033[32mPASS\033[0m %s\n' "$*"; printf 'PASS\t%s\t%s\n' "$(date +%FT%T)" "$*" >>"$RESULTS"; }
 fail() { printf '\033[31mFAIL\033[0m %s\n' "$*" >&2; printf 'FAIL\t%s\t%s\n' "$(date +%FT%T)" "$*" >>"$RESULTS"; exit 1; }
 info() { printf -- '---- %s\n' "$*"; }
+# dsz <du 参数…>：只取体积（macOS du 在体积前补空格，cut -f1 会带进 " 96M"）；没有输出返回 1
+dsz()  { local v; v=$(du -sh "$@" 2>/dev/null | awk 'NR == 1 { print $1 }'); [ -n "$v" ] && printf '%s\n' "$v"; }
 rec()  { printf 'METRIC\t%s\t%s\n' "$(date +%FT%T)" "$*" | tee -a "$RESULTS"; }
 need() { command -v "$1" >/dev/null 2>&1 || fail "缺少命令 ${1}"; }
 now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
@@ -129,7 +131,7 @@ step_install() {
   fastclaw version | grep -q "${FASTCLAW_VERSION#v}" || fail "fastclaw 版本不是 ${FASTCLAW_VERSION}"
   rec "fastclaw_version=$(fastclaw version | head -1 | tr ' ' '_')"
   pass "fastclaw ${FASTCLAW_VERSION} 已安装"
-  rec "install_size_boxlite=$(du -sh "$HOME/.local/opt/boxlite" | cut -f1) install_size_fastclaw=$(du -sh "$HOME/.local/opt/fastclaw" | cut -f1)"
+  rec "install_size_boxlite=$(dsz "$HOME/.local/opt/boxlite") install_size_fastclaw=$(dsz "$HOME/.local/opt/fastclaw")"
   { echo '$ boxlite serve --help'; boxlite serve --help 2>&1 || true
     echo; echo '$ fastclaw --help'; fastclaw --help 2>&1 || true
     echo; echo '$ fastclaw apikey create --help'; fastclaw apikey create --help 2>&1 || true; } >"$LOG_DIR/help.txt"
@@ -445,8 +447,8 @@ step_metrics() {
   local pid; pid=$(cat "$POC_HOME/boxlite.pid" 2>/dev/null || true)
   [ -n "$pid" ] && rec "boxlite_serve_rss_mb=$(( $(ps -o rss= -p "$pid" 2>/dev/null || echo 0)/1024 ))"
   rec "boxlite_vm_rss_mb=$(ps -axo rss,comm | awk '/boxlite|krun|shim/ {s+=$1} END {print int(s/1024)}')"
-  rec "boxlite_data_size=$(du -sh "$HOME/.boxlite" 2>/dev/null | cut -f1 || echo 待核实路径)"
-  rec "install_size_total=$(du -sh "$HOME/.local/opt" | cut -f1)"
+  rec "boxlite_data_size=$(dsz "$HOME/.boxlite" || echo 待核实路径)"
+  rec "install_size_total=$(dsz "$HOME/.local/opt")"
   pass "metrics 已记录"
 }
 
@@ -524,7 +526,7 @@ step_lima() {
   docker info >/dev/null 2>&1 || fail "docker info 失败（DOCKER_HOST=${DOCKER_HOST}；排查：limactl list; ls ~/.lima/${LIMA_NAME}/sock）"
   docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1 || docker pull "$SANDBOX_IMAGE" >"$LOG_DIR/docker-pull.log" 2>&1 || fail "拉取 ${SANDBOX_IMAGE} 失败"
   local w0 w1; w0=$(now_ms); docker run --rm "$SANDBOX_IMAGE" true; w1=$(now_ms); rec "lima_warm_container_ms=$((w1-w0))"
-  rec "lima_disk=$(du -sh "$HOME/.lima/$LIMA_NAME" | cut -f1) lima_install=$(du -shL "$(brew --prefix lima)" | cut -f1)"
+  rec "lima_disk=$(dsz "$HOME/.lima/$LIMA_NAME") lima_install=$(dsz -L "$(brew --prefix lima)")"
   rec "lima_vm_rss_mb=$(ps -axo rss,command | awk '/limactl|vz|Virtualization/ {s+=$1} END {print int(s/1024)}')"
   pass "Lima docker 可用：${DOCKER_HOST}"
 }
@@ -565,38 +567,7 @@ step_report() {
     echo "## BoxLite REST 前缀探测"; echo; echo '```'; cat "$LOG_DIR/boxlite-api-probe.txt" 2>/dev/null || echo "（未运行）"; echo '```'; echo
     echo "## WebSocket 直测"; echo; echo '```'; grep -E '^(attach_path|handshake|frames_with_marker):' "$LOG_DIR/ws-probe.txt" 2>/dev/null || echo "（未运行）"; echo '```'; echo
     if [ -s "$POC_HOME/t032-report.md" ]; then cat "$POC_HOME/t032-report.md"; echo; fi   # #7 运行时补测（t032-runtime-checks.sh）
-    echo "## 回填表（自动）"; echo; python3 - "$RESULTS" "$STATUS_DIR" <<'PY'
-import sys,re,os
-res,sd=sys.argv[1:]
-m={}; st=lambda k: open(os.path.join(sd,k)).read().strip() if os.path.exists(os.path.join(sd,k)) else "未运行"
-lines=open(res).read().splitlines() if os.path.exists(res) else []
-for l in lines:
-    p=l.split("\t",2)
-    if len(p)<3: continue
-    if p[0]=="METRIC":
-        for kv in re.findall(r'(\[\w+\] )?(\w+)=(\S+)',p[2]): m[(kv[0].strip()+kv[1])]=kv[2]
-def r(kind,b,n):
-    pat=f"[{b}] 验证{n}"
-    hit=[l.split("\t")[0] for l in lines if pat in l]
-    return hit[-1] if hit else "未运行"
-g=lambda k: m.get(k,"")
-rows=[("macOS / 芯片 / 内存",f"{g('macos')} / {g('arch')} / {g('mem_gb')}GB","同左"),
-("组件版本",f"boxlite={g('boxlite_version')} / {g('fastclaw_version')}",f"lima_install={g('lima_install')}"),
-("REST 前缀（探测命中，GET <前缀>/boxes）",f"{g('boxlite_rest_prefix')} → {g('boxlite_rest_list_http') or '—'}（/v1/me prefix={g('boxlite_me_prefix')}）","—"),
-("FastClaw v1.4.0 创建请求体",f"{g('fastclaw_create_compat')}（HTTP {g('fastclaw_create_probe_http')}）","—"),
-("FastClaw 连接参数",f"URL={g('fastclaw_boxlite_url')} PREFIX={g('fastclaw_boxlite_prefix')} 垫片={g('boxlite_shim') or '未启用'}","—"),
-("Lima 镜像","—",g('lima_image')),
-("验证1 /v1 流式输出",r(0,'boxlite',1),r(0,'docker',1)),
-("验证2 ~/Documents 不可读",r(0,'boxlite',2),r(0,'docker',2)),
-("验证3 出网被拦",r(0,'boxlite',3),r(0,'docker',3)),
-("冷启动 ms",g('boxlite_cold_create_start_ms'),g('lima_cold_start_ms') or g('lima_restart_ms')),
-("热启动 ms",g('boxlite_warm_exec_submit_ms'),g('lima_warm_container_ms')),
-("首轮对话 ms",g('[boxlite]first_turn_ms'),g('[docker]first_turn_ms')),
-("安装/数据体积",f"{g('install_size_boxlite')} / {g('boxlite_data_size')}",f"{g('lima_install')} / {g('lima_disk')}"),
-("内存 MB",f"serve={g('boxlite_serve_rss_mb')} vm={g('boxlite_vm_rss_mb')}",g('lima_vm_rss_mb'))]
-print("| 项 | BoxLite | Lima+docker |\n|---|---|---|")
-for a,b,c in rows: print(f"| {a} | {b or '—'} | {c or '—'} |")
-PY
+    echo "## 回填表（自动）"; echo; python3 "$SCRIPT_DIR/poc-report-table.py" "$RESULTS" "$STATUS_DIR"
     echo; echo "## results.tsv"; echo; echo '```'; cat "$RESULTS" 2>/dev/null; echo '```'; echo
     echo "## --help 输出"; echo; echo '```'; cat "$LOG_DIR/help.txt" 2>/dev/null || echo "（未运行 install）"; echo '```'; echo
     echo "## 失败步骤日志尾部"; echo

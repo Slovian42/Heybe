@@ -1,0 +1,153 @@
+METRIC	2026-10-29T11:07:35	macos=26.5.2 arch=arm64 cpu=Apple_M3 mem_gb=24
+PASS	2026-10-29T11:07:35	precheck macOS 26.5.2 / arm64 / hv_support=1 / /Users/me/.heybe-poc.env 权限 600
+METRIC	2026-10-29T11:07:35	boxlite_version=boxlite_0.10.7
+PASS	2026-10-29T11:07:35	boxlite 已安装
+METRIC	2026-10-29T11:07:36	fastclaw_version=FastClaw_v1.4.0
+PASS	2026-10-29T11:07:36	fastclaw v1.4.0 已安装
+METRIC	2026-10-29T11:07:36	install_size_boxlite= 96M install_size_fastclaw= 65M
+PASS	2026-10-29T11:07:37	boxlite serve 只监听 127.0.0.1:8100
+METRIC	2026-10-29T11:07:37	boxlite_rest_list_http=404
+FAIL	2026-10-29T11:07:37	REST /v1/default/boxes 返回 404（路径前缀待核实：curl -s http://127.0.0.1:8100/openapi.json | head）
+SKIP	2026-10-29T11:07:37	ws-probe（依赖 serve 未通过）
+SKIP	2026-10-29T11:07:37	fastclaw-boxlite（依赖 serve 未通过）
+SKIP	2026-10-29T11:07:37	setup-boxlite（依赖 fastclaw-boxlite 未通过）
+SKIP	2026-10-29T11:07:37	verify-boxlite（依赖 setup-boxlite 未通过）
+METRIC	2026-10-29T11:07:37	boxlite_serve_rss_mb=39
+METRIC	2026-10-29T11:07:37	boxlite_vm_rss_mb=39
+METRIC	2026-10-29T11:07:37	boxlite_data_size=292K
+METRIC	2026-10-29T11:07:37	install_size_total=163M
+PASS	2026-10-29T11:07:37	metrics 已记录
+PASS	2026-10-29T14:19:50	boxlite serve 只监听 127.0.0.1:8100
+METRIC	2026-10-29T14:19:50	boxlite_me_prefix=null
+METRIC	2026-10-29T14:19:50	boxlite_rest_prefix=/v1 boxlite_rest_list_http=200
+PASS	2026-10-29T14:19:50	BoxLite REST 前缀 = /v1（GET /v1/boxes → 200；已写入 /Users/me/.local/opt/heybe-poc/boxlite.api）
+FAIL	2026-10-29T14:24:50	start box 失败：POST /v1/boxes/{id}/start → HTTP 000：{"box_id":"cBMxP5uSU1Ih","name":null,"status":"configured","created_at":"2026-10-29T06:19:50.745637+00:00","updated_at":"2026-10-29T06:19:50.747649+00:00","pid":null,"image":"thinkany/fastclaw-sandbox:latest","cpus":1,"memory_mib":1024,"labels":{},"auto_stop":0,"auto_delete":0,"auto_resume":true}
+METRIC	2026-10-29T14:24:51	fastclaw_create_compat=reject_auto_remove fastclaw_create_probe_http=422 fastclaw_env_prefix=v1
+PASS	2026-10-29T14:24:51	已判定：BoxLite 拒绝 FastClaw v1.4.0 的 auto_remove（HTTP 422）→ fastclaw-boxlite 经兼容垫片 127.0.0.1:8101 转发
+PASS	2026-10-29T14:24:51	FastClaw 已停止
+METRIC	2026-10-29T14:24:52	boxlite_shim=127.0.0.1:8101
+PASS	2026-10-29T14:24:52	兼容垫片 127.0.0.1:8101 → 127.0.0.1:8100（只删除 POST …/boxes 里的 auto_remove）
+METRIC	2026-10-29T14:24:52	fastclaw_boxlite_url=http://127.0.0.1:8101 fastclaw_boxlite_prefix=v1
+PASS	2026-10-29T14:24:53	FastClaw 以 backend=boxlite、ENFORCE=1 启动（未设置 FASTCLAW_ALLOW_HOST_EXEC）
+PASS	2026-10-29T14:24:53	[boxlite] Agent poc 已配置 provider=deepseek model=deepseek/deepseek-chat
+PASS	2026-10-29T14:24:53	[boxlite] agents doctor 通过
+PASS	2026-10-29T14:24:54	[boxlite] apikey 已写入 /Users/me/.local/opt/heybe-poc/boxlite/fastclaw-apikey（600）
+FAIL	2026-10-29T14:24:54	[boxlite] /v1 调用失败
+FAIL	2026-10-29T14:24:54	[boxlite] /v1 调用失败
+FAIL	2026-10-29T14:24:54	[boxlite] /v1 调用失败
+FAIL	2026-10-29T14:24:54	[boxlite] verify 有失败项
+METRIC	2026-10-29T14:24:55	boxlite_serve_rss_mb=23
+METRIC	2026-10-29T14:24:55	boxlite_vm_rss_mb=23
+METRIC	2026-10-29T14:24:55	boxlite_data_size= 81M
+METRIC	2026-10-29T14:24:55	install_size_total=165M
+PASS	2026-10-29T14:24:55	metrics 已记录
+METRIC	2026-10-29T14:24:56	lima_image=mirror:tuna:26.04
+FAIL	2026-10-29T14:24:57	limactl start 失败（超时 45m）。见 /Users/me/.local/opt/heybe-poc/logs/lima-start.log。清理后重试：limactl delete -f heybe-poc，然后重新跑 lima 或 all。可用 LIMA_START_TIMEOUT=45m 加长超时。
+PASS	2026-10-29T14:24:59	FastClaw 已停止
+PASS	2026-10-29T14:25:00	FastClaw 以 backend=docker、ENFORCE=1 启动（未设置 FASTCLAW_ALLOW_HOST_EXEC）
+PASS	2026-10-29T14:25:01	[docker] Agent poc 已配置 provider=deepseek model=deepseek/deepseek-chat
+PASS	2026-10-29T14:25:01	[docker] sandbox.network=none 已写入 Agent 配置（是否作用于系统沙箱池待核实，见验证 3）
+PASS	2026-10-29T14:25:01	[docker] agents doctor 通过
+PASS	2026-10-29T14:25:01	[docker] apikey 已写入 /Users/me/.local/opt/heybe-poc/docker/fastclaw-apikey（600）
+FAIL	2026-10-29T14:25:02	[docker] /v1 调用失败
+FAIL	2026-10-29T14:25:02	[docker] /v1 调用失败
+FAIL	2026-10-29T14:25:02	[docker] /v1 调用失败
+FAIL	2026-10-29T14:25:02	[docker] verify 有失败项
+PASS	2026-11-02T13:43:39	清理完成（PURGE=1 删除安装、数据与 apikey 文件；brew 包需手动 brew uninstall lima docker）
+METRIC	2026-11-02T13:43:45	macos=26.5.2 arch=arm64 cpu=Apple_M3 mem_gb=24
+PASS	2026-11-02T13:43:45	precheck macOS 26.5.2 / arm64 / hv_support=1 / /Users/me/.heybe-poc.env 权限 600
+METRIC	2026-11-02T13:43:45	boxlite_version=boxlite_0.10.7
+PASS	2026-11-02T13:43:45	boxlite 已安装
+METRIC	2026-11-02T13:43:45	fastclaw_version=FastClaw_v1.4.0
+PASS	2026-11-02T13:43:45	fastclaw v1.4.0 已安装
+METRIC	2026-11-02T13:43:45	install_size_boxlite= 96M install_size_fastclaw= 65M
+PASS	2026-11-02T13:43:47	boxlite serve 只监听 127.0.0.1:8100
+METRIC	2026-11-02T13:43:47	boxlite_me_prefix=null
+METRIC	2026-11-02T13:43:47	boxlite_rest_prefix=/v1 boxlite_rest_list_http=200
+PASS	2026-11-02T13:43:47	BoxLite REST 前缀 = /v1（GET /v1/boxes → 200；已写入 /Users/me/.local/opt/heybe-poc/boxlite.api）
+FAIL	2026-11-02T13:48:47	start box 失败：POST /v1/boxes/{id}/start → HTTP 000：{"box_id":"TGvLFt2VA0Yz","name":null,"status":"configured","created_at":"2026-11-02T05:43:47.487753+00:00","updated_at":"2026-11-02T05:43:47.487887+00:00","pid":null,"image":"thinkany/fastclaw-sandbox:latest","cpus":1,"memory_mib":1024,"labels":{},"auto_stop":0,"auto_delete":0,"auto_resume":true}
+METRIC	2026-11-02T13:48:47	fastclaw_create_compat=reject_auto_remove fastclaw_create_probe_http=422 fastclaw_env_prefix=v1
+PASS	2026-11-02T13:48:47	已判定：BoxLite 拒绝 FastClaw v1.4.0 的 auto_remove（HTTP 422）→ fastclaw-boxlite 经兼容垫片 127.0.0.1:8101 转发
+METRIC	2026-11-02T13:48:49	boxlite_shim=127.0.0.1:8101
+PASS	2026-11-02T13:48:49	兼容垫片 127.0.0.1:8101 → 127.0.0.1:8100（只删除 POST …/boxes 里的 auto_remove）
+METRIC	2026-11-02T13:48:49	fastclaw_boxlite_url=http://127.0.0.1:8101 fastclaw_boxlite_prefix=v1
+PASS	2026-11-02T13:48:50	FastClaw 以 backend=boxlite、ENFORCE=1 启动（未设置 FASTCLAW_ALLOW_HOST_EXEC）
+FAIL	2026-11-02T13:48:50	[boxlite] agents init 失败（退出码 1；手动重跑看原因）
+SKIP	2026-11-02T13:48:50	verify-boxlite（依赖 setup-boxlite 未通过）
+METRIC	2026-11-02T13:48:50	boxlite_serve_rss_mb=24
+METRIC	2026-11-02T13:48:50	boxlite_vm_rss_mb=24
+METRIC	2026-11-02T13:48:50	boxlite_data_size= 97M
+METRIC	2026-11-02T13:48:50	install_size_total=165M
+PASS	2026-11-02T13:48:50	metrics 已记录
+PASS	2026-11-02T13:52:57	清理完成（PURGE=1 删除安装、数据与 apikey 文件；brew 包需手动 brew uninstall lima docker）
+METRIC	2026-11-02T14:24:02	lima_image=mirror:tuna:26.04
+FAIL	2026-11-02T14:24:03	limactl start 失败（超时 45m）。见 /Users/me/.local/opt/heybe-poc/logs/lima-start.log。清理后重试：limactl delete -f heybe-poc，然后重新跑 lima 或 all。可用 LIMA_START_TIMEOUT=45m 加长超时。
+METRIC	2026-11-02T14:25:51	lima_image=mirror:nju:26.04
+METRIC	2026-11-02T14:51:24	lima_cold_start_ms=1532526
+METRIC	2026-11-02T14:55:13	lima_warm_container_ms=187
+METRIC	2026-11-02T14:55:13	lima_disk=6.5G lima_install= 79M
+METRIC	2026-11-02T14:55:13	lima_vm_rss_mb=7022
+PASS	2026-11-02T14:55:13	Lima docker 可用：unix:///Users/me/.lima/heybe-poc/sock/docker.sock
+METRIC	2026-11-02T14:55:58	macos=26.5.2 arch=arm64 cpu=Apple_M3 mem_gb=24
+PASS	2026-11-02T14:55:58	precheck macOS 26.5.2 / arm64 / hv_support=1 / /Users/me/.heybe-poc.env 权限 600
+METRIC	2026-11-02T14:55:59	boxlite_version=boxlite_0.10.7
+PASS	2026-11-02T14:55:59	boxlite 已安装
+METRIC	2026-11-02T14:55:59	fastclaw_version=FastClaw_v1.4.0
+PASS	2026-11-02T14:55:59	fastclaw v1.4.0 已安装
+METRIC	2026-11-02T14:55:59	install_size_boxlite= 96M install_size_fastclaw= 65M
+METRIC	2026-11-02T14:56:00	lima_warm_container_ms=151
+METRIC	2026-11-02T14:56:00	lima_disk=6.5G lima_install= 79M
+METRIC	2026-11-02T14:56:01	lima_vm_rss_mb=6941
+PASS	2026-11-02T14:56:01	Lima docker 可用：unix:///Users/me/.lima/heybe-poc/sock/docker.sock
+PASS	2026-11-02T14:56:02	FastClaw 以 backend=docker、ENFORCE=1 启动（未设置 FASTCLAW_ALLOW_HOST_EXEC）
+PASS	2026-11-02T14:56:02	[docker] Agent poc 已配置 provider=deepseek model=deepseek/deepseek-chat
+PASS	2026-11-02T14:56:02	[docker] sandbox.network=none 已写入 Agent 配置（是否作用于系统沙箱池待核实，见验证 3）
+PASS	2026-11-02T14:56:02	[docker] agents doctor 通过
+PASS	2026-11-02T14:56:02	[docker] apikey 已写入 /Users/me/.local/opt/heybe-poc/docker/fastclaw-apikey（600）
+FAIL	2026-11-02T14:56:03	[docker] /v1 调用失败
+FAIL	2026-11-02T14:56:03	[docker] /v1 调用失败
+FAIL	2026-11-02T14:56:03	[docker] /v1 调用失败
+FAIL	2026-11-02T14:56:03	[docker] verify 有失败项
+METRIC	2026-11-02T14:57:55	[docker] first_turn_ms=2583
+PASS	2026-11-02T14:57:55	[docker] 验证1 exec 在 Linux 沙箱内执行并取回输出
+PASS	2026-11-02T14:57:56	[docker] 验证2 宿主 ~/Documents 不可见
+FAIL	2026-11-02T14:58:01	[docker] 验证3 出网未被拦截（boxlite：FastClaw 创建 box 不带 allow_net；docker：sandbox.network 可能未作用于系统池）
+FAIL	2026-11-02T14:58:01	[docker] verify 有失败项
+PASS	2026-11-02T15:16:20	FastClaw 已停止
+METRIC	2026-11-02T15:17:29	macos=26.5.2 arch=arm64 cpu=Apple_M3 mem_gb=24
+PASS	2026-11-02T15:17:29	precheck macOS 26.5.2 / arm64 / hv_support=1 / /Users/me/.heybe-poc.env 权限 600
+METRIC	2026-11-02T15:17:29	boxlite_version=boxlite_0.10.7
+PASS	2026-11-02T15:17:29	boxlite 已安装
+METRIC	2026-11-02T15:17:29	fastclaw_version=FastClaw_v1.4.0
+PASS	2026-11-02T15:17:29	fastclaw v1.4.0 已安装
+METRIC	2026-11-02T15:17:29	install_size_boxlite= 96M install_size_fastclaw= 65M
+PASS	2026-11-02T15:17:30	boxlite serve 只监听 127.0.0.1:8100
+METRIC	2026-11-02T15:17:30	boxlite_me_prefix=null
+METRIC	2026-11-02T15:17:30	boxlite_rest_prefix=/v1 boxlite_rest_list_http=200
+PASS	2026-11-02T15:17:30	BoxLite REST 前缀 = /v1（GET /v1/boxes → 200；已写入 /Users/me/.local/opt/heybe-poc/boxlite.api）
+METRIC	2026-11-02T15:18:08	boxlite_cold_create_start_ms=38344 (首次含镜像拉取)
+METRIC	2026-11-02T15:18:12	boxlite_warm_exec_submit_ms=67
+PASS	2026-11-02T15:18:12	WebSocket attach 流式输出 3/3（/v1/boxes/{id}/executions/{exec}/attach）
+METRIC	2026-11-02T15:18:12	fastclaw_create_compat=reject_auto_remove fastclaw_create_probe_http=422 fastclaw_env_prefix=v1
+PASS	2026-11-02T15:18:12	已判定：BoxLite 拒绝 FastClaw v1.4.0 的 auto_remove（HTTP 422）→ fastclaw-boxlite 经兼容垫片 127.0.0.1:8101 转发
+METRIC	2026-11-02T15:18:13	boxlite_shim=127.0.0.1:8101
+PASS	2026-11-02T15:18:13	兼容垫片 127.0.0.1:8101 → 127.0.0.1:8100（只删除 POST …/boxes 里的 auto_remove）
+METRIC	2026-11-02T15:18:13	fastclaw_boxlite_url=http://127.0.0.1:8101 fastclaw_boxlite_prefix=v1
+PASS	2026-11-02T15:18:14	FastClaw 以 backend=boxlite、ENFORCE=1 启动（未设置 FASTCLAW_ALLOW_HOST_EXEC）
+PASS	2026-11-02T15:18:15	[boxlite] Agent poc 已配置 provider=deepseek model=deepseek/deepseek-chat
+PASS	2026-11-02T15:18:15	[boxlite] agents doctor 通过
+PASS	2026-11-02T15:18:15	[boxlite] apikey 已写入 /Users/me/.local/opt/heybe-poc/boxlite/fastclaw-apikey（600）
+FAIL	2026-11-02T15:18:15	[boxlite] /v1 调用失败
+FAIL	2026-11-02T15:18:16	[boxlite] /v1 调用失败
+FAIL	2026-11-02T15:18:16	[boxlite] /v1 调用失败
+FAIL	2026-11-02T15:18:16	[boxlite] verify 有失败项
+METRIC	2026-11-02T15:18:16	boxlite_serve_rss_mb=34
+METRIC	2026-11-02T15:18:16	boxlite_vm_rss_mb=34
+METRIC	2026-11-02T15:18:16	boxlite_data_size=5.7G
+METRIC	2026-11-02T15:18:16	install_size_total=167M
+PASS	2026-11-02T15:18:16	metrics 已记录
+METRIC	2026-11-02T15:18:49	[boxlite] first_turn_ms=5866
+PASS	2026-11-02T15:18:49	[boxlite] 验证1 exec 在 Linux 沙箱内执行并取回输出
+PASS	2026-11-02T15:18:51	[boxlite] 验证2 宿主 ~/Documents 不可见
+FAIL	2026-11-02T15:18:58	[boxlite] 验证3 出网未被拦截（boxlite：FastClaw 创建 box 不带 allow_net；docker：sandbox.network 可能未作用于系统池）
+FAIL	2026-11-02T15:18:58	[boxlite] verify 有失败项

@@ -131,6 +131,8 @@ rm ~/.heybe-poc.env                           # 用完删除密钥文件
 
 `report.md` 会自动填写下表；空格或「未运行」项需要人工补充。
 
+表由 `scripts/poc/poc-report-table.py` 从 `results.tsv` 的 METRIC 行生成。macOS 的 `du -sh | cut -f1` 会在体积前补空格（`install_size_boxlite= 96M`），旧解析会把这些值丢掉，表里出现 `lima_install=` 和 `| / 5.7G |`。现在记录时就去掉空格（`dsz`），解析时也按 key 切段再去空白，旧的 `results.tsv` 也能正确出表。测试：`scripts/poc/report-table-test.sh`，用 2026-11-02 Mac 实测数据（`scripts/poc/testdata/`，路径已脱敏）。
+
 | 项 | BoxLite | Lima+docker |
 |---|---|---|
 | macOS / 芯片 / 内存 | | 同左 |
