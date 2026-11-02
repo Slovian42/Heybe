@@ -6,7 +6,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { FastClawClient } from "@heybe/fastclaw-adapter";
 import type { V1StreamEvent } from "@heybe/shared-types";
-import { CHAT_SESSION_KEY_PREFIX, type ChatErrorKind, type ChatServiceEvent } from "@heybe/shared-types/chat";
+import { CHAT_SESSION_KEY_PREFIX, type ChatServiceEvent } from "@heybe/shared-types/chat";
+
+import { classifyChatError } from "./chat-errors.js";
+
+export { classifyChatError } from "./chat-errors.js";
 
 export interface ChatStreamInput {
   sessionKey: string;
@@ -45,14 +49,6 @@ const MAX_CONTENT = 100_000;
 
 export function chatSessionKey(id: string): string {
   return `${CHAT_SESSION_KEY_PREFIX}${id}`;
-}
-
-/** Map FastClaw adapter errors to UI kinds without leaking upstream text. */
-export function classifyChatError(err: unknown): { kind: ChatErrorKind; message: string } {
-  const e = err as { code?: string; kind?: string } | null;
-  if (e?.code === "stream_truncated") return { kind: "interrupted", message: "中断，结果未知" };
-  if (e?.kind === "network" || e?.kind === "timeout") return { kind: "unavailable", message: "本地运行时未响应" };
-  return { kind: "failed", message: "没做成" };
 }
 
 export function toServiceEvent(ev: V1StreamEvent): ChatServiceEvent {

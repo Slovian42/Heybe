@@ -1,4 +1,4 @@
-import { FASTCLAW_ALERT_TOOLS, type ChatServiceEvent } from "@heybe/shared-types/chat";
+import { FASTCLAW_ALERT_TOOLS, type ChatErrorReason, type ChatServiceEvent } from "@heybe/shared-types/chat";
 
 export type MessageStatus = "streaming" | "done" | "stopped" | "interrupted" | "failed" | "unavailable";
 
@@ -14,6 +14,8 @@ export interface ChatMessage {
   text: string;
   status: MessageStatus;
   tools: ToolStep[];
+  /** Why it failed, from the service's error event (e.g. 「模型密钥无效，请到设置里更换」). */
+  error?: { reason: ChatErrorReason; code?: string; message: string };
 }
 
 export interface ChatState {
@@ -45,6 +47,12 @@ export const STATUS_TEXT: Record<MessageStatus, string> = {
   unavailable: "本地服务未响应",
 };
 
+/** Text under a message: the specific failure reason when the service sent one, else the generic status text. */
+export function statusText(m: Pick<ChatMessage, "status" | "error">): string {
+  if (m.error && (m.status === "failed" || m.status === "unavailable" || m.status === "interrupted")) return m.error.message;
+  return STATUS_TEXT[m.status];
+}
+
 function update(state: ChatState, id: string, fn: (m: ChatMessage) => ChatMessage): ChatState {
   return { ...state, messages: state.messages.map((m) => (m.id === id ? fn(m) : m)) };
 }
@@ -71,7 +79,11 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           return { ...m, tools: known ? m.tools.map((t) => (t.id === ev.id ? step : t)) : [...m.tools, step] };
         }
         if (ev.type === "done") return { ...m, status: "done" };
-        return { ...m, status: ev.kind };
+        return {
+          ...m,
+          status: ev.kind,
+          error: { reason: ev.reason ?? "unknown", ...(ev.code ? { code: ev.code } : {}), message: ev.message || STATUS_TEXT[ev.kind] },
+        };
       });
     case "stop": {
       const next = update(state, action.assistantId, (m) => (m.status === "streaming" ? { ...m, status: "stopped" } : m));

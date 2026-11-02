@@ -10,7 +10,7 @@ React（apps/desktop） --POST /chat/sessions/:id/messages (SSE)--> Heybe 本地
 ```
 
 - 前端只连本地服务，不连 FastClaw，不加载 FastClaw `web/`；CSP 只允许 `self` 与 `http://127.0.0.1:*`。
-- 服务端事件：`delta` / `tool`（running/done）/ `done` / `error`（interrupted=中断，结果未知；failed=没做成；unavailable），总以 `data: [DONE]` 结束。错误不透传上游原文。
+- 服务端事件：`delta` / `tool`（running/done）/ `done` / `error`（interrupted=中断，结果未知；failed=模型调用失败；unavailable=本地运行时未响应），带 `reason`/`code` 和中文 `message`（见下方「模型调用失败的原因」），总以 `data: [DONE]` 结束。错误不透传上游原文。
 - 会话键 `heybe:chat:<id>`。停止 = 前端断开 → 服务立刻断开上游；状态显示“已停止（服务端是否停止未知）”，下一轮前提示上一轮可能仍被补完（v1.4.0 无 /v1 stop，#9）。
 - 告警工具（界面上标“需要留意”）= `FASTCLAW_ALERT_TOOLS`（`packages/shared-types/src/chat.ts`，前端与任务服务共用一份）：
   - 来自 #67（Agent 管理类）：`create_agent` `configure_agent` `check_agent` `delete_agent` `spawn_subagent` `delegate_task` `install_skill`；
@@ -65,6 +65,46 @@ Tauri 壳（src-tauri/src/service.rs，Supervisor）
   - 启动时连接测试：用 key 调一次 DeepSeek `GET /models`（不花钱），HTTP 401/403 → 红色 `✗ [E_KEY_INVALID]`，中文提示到 `~/.heybe-poc.env` 换 key；连不上或其他状态码只给黄色提示、继续启动。`HEYBE_SKIP_KEY_TEST=1` 跳过。
 - #85 的 provisioner（设置页“测试连接”）：每次测试都用当前 key 跑一次 `agents init`，已存在时按 `already exists (id …)` 带 `--id` 重试，所以不会卡在旧 key（加了单测：换 key 后第二次测试带 `--id` 且子进程拿到新 key）。注意 FastClaw 的 key 是按提供方名字存的：同一个 `FASTCLAW_HOME` 里测试 `deepseek` 会同时更新聊天 Agent 用的 deepseek key（这正是“一提供方一把 key”的设计）。设置页保存 key（`PUT /providers/keys/:ref`）目前只写钥匙串，还没接到聊天 Agent（首启引导 19-g / #16-c 再接）。
 - 测试：`scripts/poc/key-sync-mock-test.sh`（假 fastclaw + 假 DeepSeek，CI 里跑）。
+
+## 模型调用失败的原因（Mac 复验问题 2）
+
+以前界面上只显示「没做成」。现在服务端的 `error` 事件带上 `reason`（类型 `ChatErrorReason`，在 `packages/shared-types/src/chat.ts`）、可选的短 `code`，以及固定的中文 `message`。桌面端显示这个 `message`；老版本服务没有发 `message` 时，退回原来的状态文字。分类代码在 `services/task-manager/src/chat-errors.ts`。
+
+**FastClaw v1.4.0 实际返回的内容。** 2026-11-02 用真实 gateway、假 key 和 mock 的 OpenAI 兼容上游测过：
+
+- 流式请求（界面用的就是流式）：HTTP 是 200，最后一个 chunk 是 `finish_reason:"stop"`，同时带 `"error":{"type":"server_error","code":"agent_error","message":"…"}`，然后是 `[DONE]`。
+- 非流式请求：HTTP 502，响应体是 `{"error":{"code":"agent_error","type":"server_error","message":"…"}}`，`message` 内容和流式一样。
+- `message` 的原文如下：
+
+| 上游情况 | `message`（原文） | 多久返回 |
+|---|---|---|
+| 401 密钥无效（DeepSeek 原样返回） | `API error 401: {"error": {"message": "Authentication Fails, Your api key: ****KEYZ is invalid", "type": "authentication_error", …}}` | 立刻 |
+| 402 余额不足 | `API error 402: {"error": {"message": "Insufficient Balance", "type": "unknown_error", …}}` | 立刻 |
+| 400 模型名不对 | `API error 400: {"error": {"message": "Model Not Exist", "type": "invalid_request_error", …}}` | 立刻 |
+| 404 | `API error 404: {… "code": "model_not_found"}` | 立刻 |
+| 429 限流 | `API error 429: {… "type": "rate_limit_reached_error", "code": "rate_limit_exceeded"}` | 约 60 秒（FastClaw 自己会重试） |
+| 500 | `API error 500: {…}` | 约 60 秒（会重试） |
+| 连接被拒 | `send request: Post "http://…/v1/chat/completions": dial tcp …: connect: connection refused` | 约 60 秒 |
+| 连接被断开 | `send request: Post "…": EOF` | 约 60 秒 |
+| 上游迟迟不返回响应头 | `send request: Post "…": net/http: timeout awaiting response headers`（gateway 日志里实测到的） | 每次尝试约 3 分钟，最多 6 次 |
+
+注意：上游的 401 文本里会带出 key 的末 4 位（`****KEYZ`）。所以上游原文一律不送到界面，界面只看到下表里的固定中文，再加上一个由数字和 `[a-z_]` 组成的错误码。
+
+**映射规则：**
+
+| reason | 匹配条件 | 界面显示 |
+|---|---|---|
+| `key_invalid` | `API error 401/403`，或者上游 `type` 是 `authentication_error` | 模型密钥无效，请到设置里更换 |
+| `insufficient_balance` | `API error 402`，或文本里有 Insufficient Balance / insufficient_quota | 模型账户余额不足，请充值后再试 |
+| `rate_limited` | `API error 429` | 模型服务限流了（请求太频繁），请稍等一会儿再试 |
+| `model_not_found` | `API error 404`、`model_not_found`，或 Model Not Exist / does not exist | 模型不存在，请到设置里检查模型名 |
+| `network` | `send request: …`，并且出现 refused / EOF / no such host / reset 等 | 连不上模型服务，请检查网络后再试 |
+| `timeout` | `API error 408/504`，或 timeout awaiting response headers / Client.Timeout / deadline exceeded | 模型服务响应超时，请稍后再试 |
+| `interrupted` | 流中途断了（`stream_truncated`） | 中断，结果未知 |
+| `runtime_unavailable` | 本地 FastClaw 连不上、超时，或者拒绝了 Heybe 的令牌（`fastclaw_401`） | 本地运行时未响应 |
+| `unknown` | 以上都不是 | 没做成，请稍后再试（错误码 `upstream_500`、`agent_error` 等） |
+
+**测试。** 单元测试在 `services/task-manager/test/chat-errors.test.ts`。上面这些原文分别按流式和 502 两种方式，经过真实的 adapter 解析后再分类。测试还断言输出里不含 key、`KEYZ`、令牌和上游原文。
 
 ## 后续（不在本 PR）
 

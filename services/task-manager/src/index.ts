@@ -74,12 +74,12 @@ export {
   corsHeaders,
   fastClawChatStream,
   chatSessionKey,
-  classifyChatError,
   handleChatMessage,
   toServiceEvent,
   type ChatStreamFn,
   type ChatStreamInput,
 } from "./chat.js";
+export { classifyChatError, classifyUpstreamStatus, type ClassifiedChatError } from "./chat-errors.js";
 export { GatewayError, startGateway, type GatewayErrorCode, type GatewayHandle, type GatewayOptions } from "./gateway.js";
 export {
   ERROR_PREFIX,
