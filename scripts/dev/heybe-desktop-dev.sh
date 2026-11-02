@@ -60,6 +60,14 @@ fi
 ok "node $(node -v)、pnpm $(pnpm -v)、$(cargo -V | cut -d' ' -f1-2)"
 
 if [ -n "$(leftovers)" ]; then die E_RUNNING "已有 fastclaw/本地服务在跑（可能是上次的 t021 或 Heybe）。先退出，或跑：scripts/poc/t021-mac.sh cleanup"; fi
+# 端口被占（例如上次留下、报 "FastClaw dev" 的 daemon，或别的程序）：直接报错，不去连别人的 gateway
+port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/${PORT}") 2>/dev/null; }
+if port_busy; then
+  if curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz"; then
+    die E_FC_FOREIGN_GATEWAY "端口 ${PORT} 上已经有一个 FastClaw gateway 在跑（不是这次启动的）。先 fastclaw daemon stop 或 scripts/poc/t021-mac.sh cleanup；也可以 HEYBE_T021_PORT=别的端口"
+  fi
+  die E_FC_PORT_BUSY "端口 ${PORT} 被别的程序占用（lsof -nP -iTCP:${PORT} -sTCP:LISTEN 查是谁），或者 HEYBE_T021_PORT=别的端口"
+fi
 
 if [ ! -s "$KEY_FILE" ] || [ ! -x "$FC_BIN" ]; then
   echo "== 首次准备：FastClaw + DeepSeek Agent（scripts/poc/t021-mac.sh）"

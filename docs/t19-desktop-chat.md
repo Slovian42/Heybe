@@ -29,8 +29,22 @@ Tauri 壳（src-tauri/src/service.rs，Supervisor）
 - 壳每次启动生成 64 位十六进制随机令牌，服务监听 `127.0.0.1` 随机端口（`HEYBE_SERVICE_PORT=0`），就绪时在标准输出打一行 `HEYBE_SERVICE_READY {"port":N}`（不含令牌）。
 - 前端只通过 Tauri 命令 `service_info` 拿 `{status,url,token}`，请求带 `Authorization: Bearer`；除 `GET /health` 外没令牌一律 401（常量时间比较）。
 - gateway 用 `fastclaw gateway --port $FASTCLAW_PORT` 前台子命令启动，stdin 指向 `/dev/null`，**不需要 TTY**（从 Dock/Finder 启动也行）。以前直接跑无子命令的 `fastclaw`：FastClaw v1.4.0 根命令把 `/dev/null` 当成交互终端（`cmd/fastclaw/main.go` 的 `RunE` + `cmd_chat.go` 的 `isInteractiveTerminal` 只看是不是字符设备），于是走聊天：先拉起一个后台 daemon（服务退出后还留着），再开 TUI，因为没有 `/dev/tty` 报 `could not open a new TTY: open /dev/tty: device not configured` 退出，服务跟着退出、被壳重启，循环。无 TTY 复现/验证：`FASTCLAW_BIN=… scripts/dev/gateway-notty-check.sh`（新会话 = 没有控制终端；Linux 用 `setsid`，macOS 用 perl `POSIX::setsid`）。
-- 服务启动时先拉起 gateway 并等 `/healthz`（最长 30 秒）；聊天接口默认开启（Agent = `HEYBE_FASTCLAW_AGENT_ID`，不设则用 `/v1/agents` 第一个）。
+- 服务启动时先拉起 gateway 并等 `/healthz`（默认最长 30 秒，`HEYBE_FASTCLAW_READY_TIMEOUT_MS` 可改；轮询间隔 0.2 秒起、翻倍到 2 秒）；聊天接口默认开启（Agent = `HEYBE_FASTCLAW_AGENT_ID`，不设则用 `/v1/agents` 第一个）。
+- 启动前检查（`services/task-manager/src/gateway.ts`）：先跑 `fastclaw version` 取 CLI 版本，再看 `FASTCLAW_PORT`（默认 18963）有没有人占：
+  - 端口上已经有 FastClaw 在响应（例如上次留下的 daemon）→ `E_FC_FOREIGN_GATEWAY`，版本和 CLI 不一样时 → `E_FC_VERSION_MISMATCH`。**不去连别人的 gateway**，报错并提示 `fastclaw daemon stop` / `scripts/poc/t021-mac.sh cleanup` / 换 `FASTCLAW_PORT`。
+  - 端口被别的程序占着（或 gateway 打出 `address already in use`）→ `E_FC_PORT_BUSY`，提示 `lsof -nP -iTCP:<端口> -sTCP:LISTEN`。
+  - 自己拉起的 gateway 健康后再核对一次 `/api/status` 版本，不一致 → 停掉它，`E_FC_VERSION_MISMATCH`。
+  - 30 秒没就绪 → 停掉它，`E_FC_READY_TIMEOUT`；没就绪就退出 → `E_FC_EXITED`（带 stderr 末尾）。
+  - 注意：FastClaw v1.4.0 官方发布包的 gateway 在 `/api/status` 报 `"version":"dev"`（发布构建只注入了 `main.version`，没注入 `buildinfo.Version`），所以 FastClaw 自己会打 `gateway is running FastClaw dev but this CLI is v1.4.0` 的假警告。我们把 `dev`/空当作“版本未知”，不算不一致。
+  - 启动失败时服务在标准输出打一行 `HEYBE_SERVICE_ERROR {"code","message","retryable"}`；端口/版本三类不可重试，退出码 3。
+- 壳（Supervisor）：
+  - 等 READY 默认 60 秒（`HEYBE_SERVICE_READY_TIMEOUT_MS` 可改，要比服务里等 gateway 的 30 秒长）；服务没打 READY 就退出会立刻发现，不再空等。
+  - **报 READY 之前不做健康检查**；READY 后第一次 `/health` 成功前有 10 秒宽限，宽限内失败不计数。
+  - 收到不可重试的 `HEYBE_SERVICE_ERROR` → 直接 `failed`，不重启。
+  - 连续 5 次不稳定（没起来，或起来不到 30 秒就挂）→ 停止重试，`failed`。
+  - `service_info` 多了 `error` 字段；`failed` 时横幅显示“本地服务没有启动，请退出后重开 Heybe：<原因>”。
 - 崩溃重启：服务退出，或 `/health` 连续 3 次（每 2 秒一次）失败 → 杀整个进程组 → 退避 0.5/1/2/4/8 秒重启；界面显示“本地服务断开，正在重连…”，好了自动消失。
+- 一键开发脚本启动前也会探测端口：有 FastClaw 在响应报 `E_FC_FOREIGN_GATEWAY`，被别的程序占着报 `E_FC_PORT_BUSY`。
 - 退出（Cmd+Q）：壳给进程组发 SIGTERM，3 秒后 SIGKILL；服务收到 SIGTERM / 标准输入关闭（壳意外死掉）都会先停 gateway。gateway 自己挂了，服务也跟着退出并由壳重启。
 - 开发版命令：debug 构建用 `pnpm -C services/task-manager start`（tsx）；可用 `HEYBE_SERVICE_CMD` 覆盖。发布版打包成 sidecar 留给 19-h。
 - 一键开发脚本：`scripts/dev/heybe-desktop-dev.sh`（预检 → 首次自动跑 `scripts/poc/t021-mac.sh` 准备 FastClaw + DeepSeek → `pnpm install` → Node/better-sqlite3 检查 → `pnpm tauri dev`）；`… check` 检查残留进程。

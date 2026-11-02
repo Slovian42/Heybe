@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { loadServiceInfo, loopbackUrl } from "../src/config";
+import { bannerText, loadServiceInfo, loopbackUrl } from "../src/config";
 
 const conf = JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"));
 const caps = JSON.parse(readFileSync(new URL("../src-tauri/capabilities/default.json", import.meta.url), "utf8"));
@@ -18,7 +18,21 @@ describe("service info (19-b)", () => {
       expect(cmd).toBe("service_info");
       return { status: "ready", url: "http://127.0.0.1:5555", token: "tok", restarts: 1 };
     };
-    expect(await loadServiceInfo(invoke)).toEqual({ status: "ready", url: "http://127.0.0.1:5555", token: "tok", restarts: 1 });
+    expect(await loadServiceInfo(invoke)).toEqual({ status: "ready", url: "http://127.0.0.1:5555", token: "tok", restarts: 1, error: null });
+  });
+  it("shows the shell's error in the failed banner (port taken / version mismatch / gave up)", async () => {
+    const info = await loadServiceInfo(async () => ({
+      status: "failed",
+      url: null,
+      token: "",
+      restarts: 5,
+      error: "端口 18963 上已经有一个 FastClaw gateway（版本未知）（E_FC_FOREIGN_GATEWAY）",
+    }));
+    expect(info.error).toContain("E_FC_FOREIGN_GATEWAY");
+    expect(bannerText(info)).toBe("本地服务没有启动，请退出后重开 Heybe：" + info.error);
+    // non-failed states keep the short banner
+    expect(bannerText({ status: "reconnecting", error: "本地服务意外退出" })).toBe("本地服务断开，正在重连…");
+    expect(bannerText({ status: "ready", error: null })).toBe("");
   });
   it("hides the url while reconnecting and rejects non-loopback urls", async () => {
     expect((await loadServiceInfo(async () => ({ status: "reconnecting", url: "http://127.0.0.1:1", token: "t" }))).url).toBeNull();

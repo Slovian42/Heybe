@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { streamChat } from "./chat/client";
 import { STATUS_TEXT, WARN_TOOLS, chatReducer, initialChatState, type ChatMessage } from "./chat/state";
-import { STATUS_BANNER, inTauri, loadServiceInfo, type ServiceInfo } from "./config";
+import { bannerText, inTauri, loadServiceInfo, type ServiceInfo } from "./config";
 
 // The UI talks only to the local Heybe service, never to FastClaw's web/ console.
 const SESSION_ID = crypto.randomUUID();
@@ -38,7 +38,7 @@ export function App() {
   const [input, setInput] = useState("");
   const running = useRef<{ id: string; ctl: AbortController } | null>(null);
   const busy = state.messages.some((m) => m.status === "streaming");
-  const [service, setService] = useState<ServiceInfo>({ status: "starting", url: null, token: "", restarts: 0 });
+  const [service, setService] = useState<ServiceInfo>({ status: "starting", url: null, token: "", restarts: 0, error: null });
 
   // 19-b: poll the shell for the service URL/token; shows "正在重连" while it restarts.
   useEffect(() => {
@@ -91,7 +91,7 @@ export function App() {
         <h1>Heybe</h1>
         <p>说一句，剩下的交给它。</p>
       </header>
-      {STATUS_BANNER[service.status] && <p className="banner" data-status={service.status}>{STATUS_BANNER[service.status]}</p>}
+      {bannerText(service) && <p className="banner" data-status={service.status}>{bannerText(service)}</p>}
       <section className="messages">
         {state.messages.map((m) => (
           <Message key={m.id} m={m} />

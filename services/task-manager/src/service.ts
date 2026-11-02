@@ -12,6 +12,13 @@ import { startGateway, type GatewayHandle } from "./gateway.js";
 import { startTaskHttpServer, stopTaskHttpServer } from "./http.js";
 
 export const READY_PREFIX = "HEYBE_SERVICE_READY ";
+/** Startup failure line on stdout: {"code","message","retryable"}; the shell shows `message`. */
+export const ERROR_PREFIX = "HEYBE_SERVICE_ERROR ";
+
+function msFromEnv(raw: string | undefined, fallback: number): number {
+  const n = Number(raw?.trim());
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
 export const MIN_TOKEN_LENGTH = 32;
 
 export interface HeybeService {
@@ -62,6 +69,7 @@ export async function startHeybeService(
       bin,
       port: portNum,
       env,
+      readyTimeoutMs: msFromEnv(env.HEYBE_FASTCLAW_READY_TIMEOUT_MS, 30_000),
       healthUrl: `http://127.0.0.1:${fcPort}/healthz`,
     });
   }

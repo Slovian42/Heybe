@@ -80,8 +80,9 @@ export {
   type ChatStreamFn,
   type ChatStreamInput,
 } from "./chat.js";
-export { startGateway, type GatewayHandle, type GatewayOptions } from "./gateway.js";
+export { GatewayError, startGateway, type GatewayErrorCode, type GatewayHandle, type GatewayOptions } from "./gateway.js";
 export {
+  ERROR_PREFIX,
   MIN_TOKEN_LENGTH,
   READY_PREFIX,
   chatFromEnv,
