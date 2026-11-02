@@ -56,6 +56,7 @@ describe("sandbox keys and env", () => {
       FASTCLAW_SANDBOX_BOXLITE_URL: "http://127.0.0.1:5555",
       FASTCLAW_SANDBOX_BOXLITE_PREFIX: "v1",
       BOXLITE_API_KEY: "client-key-x",
+      FASTCLAW_DEPLOY: "hosted",
     });
     expect(env.OPENAI_API_KEY).toBeUndefined();
     // Without the sandbox options a parent BOXLITE_API_KEY is dropped like any other secret.
@@ -132,13 +133,15 @@ describe("gateway gets the sandbox env (env only)", () => {
     const gw = await startGateway({
       bin: FAKE_GW,
       port,
-      env: { PATH: process.env.PATH, HOME: process.env.HOME, FASTCLAW_HOME: fcHome, FASTCLAW_SANDBOX_BOXLITE_URL: "http://evil", DEEPSEEK_API_KEY: FAKE_SECRET },
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, FASTCLAW_HOME: fcHome, FASTCLAW_SANDBOX_BOXLITE_URL: "http://evil", FASTCLAW_DEPLOY: "self-hosted", DEEPSEEK_API_KEY: FAKE_SECRET },
       childEnv: sandboxGatewayEnv("http://127.0.0.1:5555", "c".repeat(43)),
     });
     try {
       const rec = JSON.parse(readFileSync(join(fcHome, "env.json"), "utf8")) as { names: string[]; sandbox: Record<string, string>; apiKeyLength: number };
       expect(rec.sandbox.FASTCLAW_SANDBOX_BOXLITE_URL).toBe("http://127.0.0.1:5555");
       expect(rec.sandbox.FASTCLAW_SANDBOX_BACKEND).toBe("boxlite");
+      // B1: file tools routed into the sandbox (docs/b1-file-tools.md); a parent value can't change it.
+      expect(rec.sandbox.FASTCLAW_DEPLOY).toBe("hosted");
       expect(rec.apiKeyLength).toBe(43);
       expect(rec.names).not.toContain("DEEPSEEK_API_KEY");
       expect(gw.child.spawnargs.join(" ")).not.toContain("c".repeat(43));
@@ -166,6 +169,7 @@ describe("gateway gets the sandbox env (env only)", () => {
       expect(existsSync(join(home, "record.json"))).toBe(true);
       const set = seen?.childEnv?.set ?? {};
       expect(set.FASTCLAW_SANDBOX_BOXLITE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+      expect(set.FASTCLAW_DEPLOY).toBe("hosted");
       expect((await fetch(`${set.FASTCLAW_SANDBOX_BOXLITE_URL}/v1/boxes`)).status).toBe(401);
       expect((await fetch(`${set.FASTCLAW_SANDBOX_BOXLITE_URL}/v1/boxes`, { headers: { authorization: `Bearer ${set.BOXLITE_API_KEY}` } })).status).toBe(200);
     } finally {

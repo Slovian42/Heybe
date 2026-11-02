@@ -46,6 +46,12 @@ export function boxliteServeArgs(port: number): string[] {
  * Child-env options that turn the BoxLite sandbox on for the gateway. All names are listed in
  * `extra` (the generic allowlist no longer carries any FASTCLAW_SANDBOX_* name), and
  * BOXLITE_API_KEY is the one secret-looking name allowed through.
+ *
+ * FASTCLAW_DEPLOY=hosted closes B1 (docs/b1-file-tools.md): FastClaw v1.4.0 then routes every
+ * file-tool path (write_file / edit_file / read_file / list_dir, incl. ~/Documents and /Users/…)
+ * into the sandbox (internal/agent/tools/route.go rule 1) and never registers host_exec
+ * (buildinfo.IsHostExecAllowed). It is set only together with the sandbox: hosted without a
+ * sandbox pool makes file tools refuse instead of touching the host.
  */
 export function sandboxGatewayEnv(proxyUrl: string, clientKey: string): ChildEnvOptions {
   const set: Record<string, string> = {
@@ -55,6 +61,7 @@ export function sandboxGatewayEnv(proxyUrl: string, clientKey: string): ChildEnv
     FASTCLAW_SANDBOX_BOXLITE_URL: proxyUrl,
     FASTCLAW_SANDBOX_BOXLITE_PREFIX: BOXLITE_PREFIX,
     BOXLITE_API_KEY: clientKey,
+    FASTCLAW_DEPLOY: "hosted",
   };
   return { extra: Object.keys(set), set };
 }

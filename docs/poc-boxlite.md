@@ -94,7 +94,10 @@ verify 曾把 `agents init` 的名字 `poc` 直接当 `model` / `agent_id` / `x-
 | DEEPSEEK_API_KEY | `${HEYBE_POC_ENV:-~/.heybe-poc.env}`（600 校验） | 只在脚本进程和 FastClaw gateway 环境中 | 终端、日志、报告 |
 | FastClaw apikey（每个后端一个） | 脚本运行 `fastclaw apikey create`，先用 `--help` 确认 `--name`（和 `--type`）参数存在，拿不到就 FAIL 并提示 | `~/.local/opt/heybe-poc/{boxlite,docker}/fastclaw-apikey`（600） | 终端、日志、报告 |
 | admin 初始密码 | `agents init` 首次创建 admin 时会打印生成的密码 | **不落盘**（脚本只在内存里读 init 输出后丢弃）；Heybe 不用控制台，需要时用 `fastclaw admin reset-password` 重置 | 报告 |
-| BOXLITE_API_KEY | 占位值 `local-poc`（本地 serve 未加 `--api-key` 为宽松模式） | 环境变量 | — |
+| BoxLite serve key（`BOXLITE_SERVE_API_KEY`） | 脚本随机生成 | `~/.local/opt/heybe-poc/boxlite/serve.key`（600）；只经环境变量交给 `boxlite serve` 和代理（代理里叫 `HEYBE_BOXLITE_UPSTREAM_KEY`），不进 argv | 终端、日志、报告、`ps` |
+| 代理 client key（FastClaw 的 `BOXLITE_API_KEY`） | 脚本随机生成，与 serve key 不同 | `~/.local/opt/heybe-poc/boxlite/proxy-client.key`（600）；只经环境变量交给代理（`HEYBE_BOXLITE_CLIENT_KEY`）和 gateway | 终端、日志、报告、`ps` |
+
+gateway（boxlite 后端）另带 `FASTCLAW_DEPLOY=hosted`（B1，见 [b1-file-tools.md](b1-file-tools.md)）；`HEYBE_POC_DEPLOY=self-hosted` 可复现修复前行为作对照，切换前先 `cleanup-fastclaw`。
 
 ## 3. 原手动步骤的自动化情况
 

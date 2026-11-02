@@ -9,7 +9,7 @@ export HOME="$T/home" HEYBE_POC_HOME="$T/poc" T032_NO_START=1
 mkdir -p "$HOME/Documents" "$HEYBE_POC_HOME/boxlite"
 echo keep >"$HOME/Documents/user-file.txt"
 ( umask 077; printf 'mock-key' >"$HEYBE_POC_HOME/boxlite/fastclaw-apikey" )
-echo boxlite >"$HEYBE_POC_HOME/fastclaw.backend"
+echo boxlite >"$HEYBE_POC_HOME/fastclaw.backend"; echo self-hosted >"$HEYBE_POC_HOME/fastclaw.deploy"
 PORT=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')
 export FASTCLAW_PORT=$PORT
 python3 - "$PORT" "$T/hosted" <<'PY' &
@@ -76,10 +76,11 @@ clean() {
 clean
 
 # 第二轮：模拟 FASTCLAW_DEPLOY=hosted（文件工具不碰宿主机），三个 C1 子项都应是“未落宿主机”，临时文件都清掉
-: >"$T/hosted"
+: >"$T/hosted"; echo hosted >"$HEYBE_POC_HOME/fastclaw.deploy"
 "$SCRIPT_DIR/t032-runtime-checks.sh" >/dev/null
 ok '| C1a write_file 写 ~/Documents（B1） | 未落宿主机 |'
 ok '| C1b edit_file 改 ~/Documents（B1） | 未落宿主机 |.*已删除临时文件'
 ok '| C1c apply_patch 写 ~/Documents（B1） | 未落宿主机 |'
+ok 'FastClaw 部署模式：hosted'
 clean
 echo "t032 mock test: PASS"

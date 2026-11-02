@@ -380,7 +380,12 @@ fc_env() { # backend：导出该后端的 FastClaw 环境（不含 FASTCLAW_ALLO
   unset FASTCLAW_ALLOW_HOST_EXEC
   export FASTCLAW_PORT FASTCLAW_HOME; FASTCLAW_HOME=$(home_for "$1"); mkdir -p "$FASTCLAW_HOME"
   export FASTCLAW_SANDBOX_ENABLED=1 FASTCLAW_SANDBOX_ENFORCE=1 FASTCLAW_SANDBOX_BACKEND="$1"
+  unset FASTCLAW_DEPLOY
   if [ "$1" = boxlite ]; then
+    # B1（docs/b1-file-tools.md）：和产品一样 FASTCLAW_DEPLOY=hosted，文件工具一律进沙箱、不碰宿主机；
+    #   HEYBE_POC_DEPLOY=self-hosted 可复现修复前的 B1（t032 C1a/C1b 应为“B1 成立”）
+    case "${HEYBE_POC_DEPLOY:-hosted}" in hosted|self-hosted) ;; *) fail "HEYBE_POC_DEPLOY 只能是 hosted 或 self-hosted" ;; esac
+    export FASTCLAW_DEPLOY="${HEYBE_POC_DEPLOY:-hosted}"
     # FastClaw 拼 {URL}/{PREFIX}/boxes：URL 不带路径，PREFIX=探测到的前缀去掉开头 /（0.10.x → v1；0.9.5 → v1/default）
     load_api_base
     # 一律经代理（强制禁出网）；FastClaw 的 BOXLITE_API_KEY = 代理的 client key（随机，600 文件）
@@ -400,14 +405,17 @@ start_fastclaw() { # backend
   [ "$backend" = boxlite ] && rec "fastclaw_boxlite_url=${FASTCLAW_SANDBOX_BOXLITE_URL} fastclaw_boxlite_prefix=${FASTCLAW_SANDBOX_BOXLITE_PREFIX}"
   if curl -sS -o /dev/null -m 2 "http://127.0.0.1:$FASTCLAW_PORT/" 2>/dev/null; then
     [ "$(cat "$POC_HOME/fastclaw.backend" 2>/dev/null)" = "$backend" ] || fail "端口 ${FASTCLAW_PORT} 已被其他 FastClaw 占用（先跑 cleanup-fastclaw）"
+    [ "$(cat "$POC_HOME/fastclaw.deploy" 2>/dev/null)" = "${FASTCLAW_DEPLOY:-self-hosted}" ] \
+      || fail "在跑的 FastClaw 部署模式是 $(cat "$POC_HOME/fastclaw.deploy" 2>/dev/null || echo 未知)，本次要 ${FASTCLAW_DEPLOY:-self-hosted}（先跑 cleanup-fastclaw）"
     pass "FastClaw(backend=${backend}) 已在运行"; return 0
   fi
   # `fastclaw` 无子命令即启动 gateway（FC:cmd/fastclaw/main.go:127）
   # 只传白名单环境变量；BOXLITE_API_KEY（代理 client key）显式放行；DEEPSEEK_API_KEY 不传（已在 init 时写库）
   fc_env_bg "$POC_HOME/fastclaw.pid" "BOXLITE_API_KEY" nohup fastclaw gateway --port "$FASTCLAW_PORT" >"$LOG_DIR/fastclaw-$backend.log" 2>&1
-  echo "$backend" >"$POC_HOME/fastclaw.backend"
+  echo "$backend" >"$POC_HOME/fastclaw.backend"; echo "${FASTCLAW_DEPLOY:-self-hosted}" >"$POC_HOME/fastclaw.deploy"
+  rec "[$backend] fastclaw_deploy=${FASTCLAW_DEPLOY:-self-hosted}"
   wait_http "http://127.0.0.1:$FASTCLAW_PORT/" 30 || fail "FastClaw 未起来，见 ${LOG_DIR}/fastclaw-${backend}.log"
-  pass "FastClaw 以 backend=${backend}、ENFORCE=1 启动（未设置 FASTCLAW_ALLOW_HOST_EXEC）"
+  pass "FastClaw 以 backend=${backend}、ENFORCE=1、FASTCLAW_DEPLOY=${FASTCLAW_DEPLOY:-未设置} 启动（未设置 FASTCLAW_ALLOW_HOST_EXEC）"
 }
 
 # v1 关闭 camoufox-cli 浏览器技能（#7）。skills.entries 是系统作用域（FC:internal/agentcli/agentcli.go
@@ -637,7 +645,7 @@ cleanup_fastclaw() {
   if [ -f "$POC_HOME/fastclaw.pid" ]; then kill "$(cat "$POC_HOME/fastclaw.pid")" 2>/dev/null || true; sleep 2; fi
   if [ -f "$POC_HOME/boxlite-proxy.pid" ]; then kill "$(cat "$POC_HOME/boxlite-proxy.pid")" 2>/dev/null || true; fi
   rm -f "$POC_HOME/boxlite-proxy.pid" "$(proxy_client_key_file)"
-  rm -f "$POC_HOME/fastclaw.pid" "$POC_HOME/fastclaw.backend"
+  rm -f "$POC_HOME/fastclaw.pid" "$POC_HOME/fastclaw.backend" "$POC_HOME/fastclaw.deploy"
 }
 step_cleanup() {
   info "清理"

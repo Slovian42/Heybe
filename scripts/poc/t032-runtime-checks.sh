@@ -185,7 +185,7 @@ c4() {
 for c in c1 c1e c1p c2 c3 c4; do ( set +e; $c ) || row "$c" 未判定 "脚本异常（见上方输出）"; done
 {
   echo "## #7 T0.3.2 运行时补测（BoxLite 强制沙箱）"; echo
-  echo "生成时间：$(date '+%F %T %Z')；原始输出：\`${LOG_DIR}/t032-c*.txt\`"; echo
+  echo "生成时间：$(date '+%F %T %Z')；FastClaw 部署模式：$(cat "$POC_HOME/fastclaw.deploy" 2>/dev/null || echo 未知)（hosted 时 C1 应全为「未落宿主机」）；原始输出：\`${LOG_DIR}/t032-*.txt\`"; echo
   echo '| 项目 | 结论 | 说明 |'; echo '|---|---|---|'; cat "$RAW"
 } >"$OUT"
 rm -f "$RAW"
