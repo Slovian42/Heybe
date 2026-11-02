@@ -67,6 +67,17 @@ LIMA_START_TIMEOUT=45m scripts/poc/boxlite-poc.sh all
 # 回传：~/.local/opt/heybe-poc/report.md（已脱敏）
 ```
 
+## 1.2 /v1 用 Agent id，不用名字（2026-11-02 Mac 实测）
+
+verify 曾把 `agents init` 的名字 `poc` 直接当 `model` / `agent_id` / `x-fastclaw-agent-id` 发给 `/v1/chat/completions`，FastClaw v1.4.0 返回 `404 agent_not_found`（`/v1` 只认 `agt_…` id，见 `docs/interface-verification.md`「指定 Agent」）。现在 `boxlite-poc.sh verify` 与 `t032-runtime-checks.sh` 先查 id（`scripts/poc/lib-fc-agent.sh`）：
+
+1. `HEYBE_POC_AGENT=agt_…`：手动指定，直接用（排查时覆盖）；
+2. `GET /v1/agents`（Bearer apikey，翻页），`display_name` 等于名字的那一个（同名取最新）；
+3. `fastclaw agents list`（该后端的 `FASTCLAW_HOME`），名字所在行的 `agt_…`；
+4. `setup` 时从 `agents init` 输出记下的 id：`~/.local/opt/heybe-poc/<backend>/agent-id`（600；init 输出里的管理员密码不落盘）。
+
+名字默认 `poc`，可用 `HEYBE_POC_AGENT_NAME` 改；`HEYBE_POC_AGENT` 写成不带 `agt_` 的值时按名字处理（兼容旧用法）。报告里会记一行 `[<backend>] agent_id=agt_…`。干跑测试：`scripts/poc/fc-agent-mock-test.sh`、`scripts/poc/t032-mock-test.sh`（假 FastClaw 收到名字会回 404）。
+
 ## 2. 密钥处理
 
 | 密钥 | 来源 | 存放 | 不会出现在 |

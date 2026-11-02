@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # t032-runtime-checks.sh 的干跑测试：临时 HOME + 假 FastClaw（模拟 /v1 SSE 与工具事件），不需要 BoxLite/密钥。
+# 假 FastClaw 和真的一样只认 agt_… id：传名字 poc 会 404 agent_not_found；GET /v1/agents 分两页返回。
 # 用法: scripts/poc/t032-mock-test.sh   （任一断言失败退出码非 0）
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -15,9 +16,21 @@ python3 - "$PORT" <<'PY' &
 import sys,json,re,http.server
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self,*a): pass
+    def js(self,code,obj):
+        b=json.dumps(obj).encode(); self.send_response(code); self.send_header("Content-Type","application/json")
+        self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b)
+    def do_GET(self):
+        if not self.path.startswith("/v1/agents"): return self.js(404,{"error":{"code":"not_found"}})
+        if self.headers.get("Authorization")!="Bearer mock-key": return self.js(401,{"error":{"code":"unauthorized"}})
+        if "cursor=p2" in self.path:
+            return self.js(200,{"agents":[{"id":"agt_mock123","name":"agt_mock123","display_name":"poc"}],"has_more":False,"next_cursor":None})
+        return self.js(200,{"agents":[{"id":"agt_other9","name":"agt_other9","display_name":"poc-old-copy"}],"has_more":True,"next_cursor":"p2"})
     def do_POST(self):
         assert self.headers["Authorization"]=="Bearer mock-key"
-        p=json.loads(self.rfile.read(int(self.headers["Content-Length"])))["messages"][0]["content"]
+        j=json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if j.get("agent_id")!="agt_mock123" or self.headers.get("x-fastclaw-agent-id")!="agt_mock123":
+            return self.js(404,{"error":{"code":"agent_not_found","message":"agent not found"}})
+        p=j["messages"][0]["content"]
         ev=[]
         if "write_file" in p:
             m=re.search(r"path '([^']+)' with exactly this content: (\S+)",p); open(m.group(1),"w").write(m.group(2)+"\n")
@@ -37,6 +50,7 @@ MPID=$!
 for _ in $(seq 50); do curl -s -o /dev/null "http://127.0.0.1:$PORT" && break; sleep 0.1; done
 out=$("$SCRIPT_DIR/t032-runtime-checks.sh")
 echo "$out"
+echo "$out" | grep -q '/v1 使用 Agent id agt_mock123' || { echo "ASSERT FAIL: 没按名字 poc 查到 agt_mock123" >&2; exit 1; }
 R="$HEYBE_POC_HOME/t032-report.md"
 ok() { grep -q "$1" "$R" || { echo "ASSERT FAIL: $1" >&2; exit 1; }; }
 ok '| C1 文件工具写 ~/Documents（B1） | B1 成立 |.*已删除临时文件'
