@@ -540,6 +540,7 @@ step_report() {
     for s in "${ALL_STEPS[@]}"; do echo "| $s | $(cat "$STATUS_DIR/$s" 2>/dev/null || echo 未运行) |"; done; echo
     echo "## BoxLite REST 前缀探测"; echo; echo '```'; cat "$LOG_DIR/boxlite-api-probe.txt" 2>/dev/null || echo "（未运行）"; echo '```'; echo
     echo "## WebSocket 直测"; echo; echo '```'; grep -E '^(attach_path|handshake|frames_with_marker):' "$LOG_DIR/ws-probe.txt" 2>/dev/null || echo "（未运行）"; echo '```'; echo
+    if [ -s "$POC_HOME/t032-report.md" ]; then cat "$POC_HOME/t032-report.md"; echo; fi   # #7 运行时补测（t032-runtime-checks.sh）
     echo "## 回填表（自动）"; echo; python3 - "$RESULTS" "$STATUS_DIR" <<'PY'
 import sys,re,os
 res,sd=sys.argv[1:]

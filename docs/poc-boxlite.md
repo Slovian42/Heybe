@@ -33,8 +33,7 @@
 ( umask 077; read -rs K; printf 'DEEPSEEK_API_KEY=%s\n' "$K" > ~/.heybe-poc.env ); chmod 600 ~/.heybe-poc.env
 
 git clone https://github.com/Slovian42/Heybe.git && cd Heybe
-# 含 bash 3.2 花括号修复的分支（合入 main 后可直接用 main）：
-git fetch origin && git checkout fix/poc-bash-brace   # 或：git checkout main && git pull
+git fetch origin && git checkout main && git pull
 scripts/poc/boxlite-poc.sh all
 # Lima 若仍超时，可加长：LIMA_START_TIMEOUT=45m scripts/poc/boxlite-poc.sh all
 ```
@@ -60,7 +59,7 @@ scripts/poc/boxlite-poc.sh all
 ```bash
 # 停掉上次残留；不要发 agents-init.log
 cd ~/heybe-poc   # 或你 clone 的目录
-git fetch origin && git checkout fix/poc-bash-brace && git pull
+git fetch origin && git checkout main && git pull
 scripts/poc/boxlite-poc.sh cleanup
 limactl delete -f heybe-poc 2>/dev/null || true
 # 密钥文件保留即可（仍须 600）
