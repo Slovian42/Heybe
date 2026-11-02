@@ -45,6 +45,8 @@
 
 - [ ] 强制模式 + BoxLite：`exec` 写的文件不出现在宿主机、`exec` 不能访问宿主机 `~`
 - [ ] 文件工具写 `~/Documents/heybe-t032-<随机>.txt`（验证 B1），分三项：C1a `write_file` 新建、C1b `edit_file` 改脚本先建好的新文件、C1c `apply_patch` 新建。源码静态结论（v1.4.0）：前两个本地部署下对 `~/Documents`、`/Users/…` 走宿主机（`route.go` `RouteHostFS`，B1 成立）；沙箱版 `apply_patch` 只写沙箱/工作区（`apply_patch.go` `writeForPatchSandbox`），预期“未落宿主机”。开 `FASTCLAW_DEPLOY=hosted` 后三项都应是“未落宿主机”（见 `b1-file-tools.md`）
+  - C1b 怎么保证真的调用了 `edit_file`：FastClaw v1.4.0 的 `/v1` 只有 chat/agents/sessions/usage，没有直接调某个工具的接口，请求里也不能限定可用工具，所以没有确定性的办法。脚本用写死的提示词：逐字给出 `edit_file` 的 JSON 参数（`path`/`old_string`/`new_string`），只许调用一次，禁止 `exec`/`write_file`/`apply_patch`/`read_file` 等其他工具，出错就回 FAILED。是否生效以流里的工具事件为准（SSE `tool` 块，来自服务端 tool_call/tool_result）：只有 `edit_file` 且有一次 `done` 才判定；否则把文件写回原值重试，最多 `T032_C1B_TRIES`（默认 3）次，仍不行记 `INCONCLUSIVE（未判定）`，不会记 PASS 或“未落宿主机”。每次的工具事件留在 `logs/t032-edit_file-try<N>-tools.txt`。
 - [ ] 沙箱镜像内有无 `camoufox-cli`（v1 已关该技能，见第 4 行；二进制在不在只影响断网失效时的风险）
+  - 结论（2026-11-02 Mac 复验 C2=有）：可接受。① 技能已在系统作用域关闭（`skills.entries.camoufox-cli.enabled=false`，产品和 PoC 都读回校验，读回不是 false 就拒绝启动），加载器不再把它提供给模型；② 沙箱没有出网：代理对每个建箱请求强制 `outbound=disabled`，验证 3 外网和宿主端口都是 NET_BLOCKED，二进制就算被 `exec` 直接调用也打不开任何网站，也碰不到宿主机；③ 部署模式 hosted，文件工具不落宿主机。剩余风险：只有网络策略被改动时它才有用。后续：自建不含它的沙箱镜像（不阻塞 v1）。
 - [ ] `delegate_task` 子 Agent 的命令在父沙箱内
 - [ ] 不设 `FASTCLAW_ALLOW_HOST_EXEC` 时工具列表里没有 `host_exec`；另记 C4b：工具列表里有哪些能写文件的工具（`write_file`/`edit_file`/`apply_patch`）

@@ -3,6 +3,8 @@
 # 用法: scripts/poc/t032-runtime-checks.sh            （先跑过 boxlite-poc.sh rerun-boxlite，setup boxlite 已完成）
 #   C1 B1：文件工具写 ~/Documents/heybe-t032-<随机>.txt，看是否落到宿主机（落到 = B1 成立）。
 #          C1a write_file 新建；C1b edit_file 改测试自己先建的新文件；C1c apply_patch 新建。
+#          C1b 提示词只许调用一次 edit_file，按流里的工具事件确认真的只调用了 edit_file；否则重试，
+#          最多 T032_C1B_TRIES（默认 3）次，仍不行记 INCONCLUSIVE（未判定），不记 PASS。
 #          每项只碰自己的一个新文件（先确认不存在），测完核对内容是本测试写的才删，不碰已有文件。
 #   C2 沙箱镜像内有没有 camoufox-cli（exec 里 command -v）。
 #   C3 delegate_task 子 Agent 的命令是否与父 Agent 在同一个沙箱（比对 Linux boot_id + hostname）。
@@ -88,12 +90,12 @@ c1_judge() { # 标签 工具 文件 期望内容 说明前缀
   elif [ -f "$f" ] && used "$tool" "$tool"; then
     del="内容不是本测试预期的结果，未删除：$f"
     case "$(tr -d '\r\n' <"$f")" in HEYBE_T032_*) rm -f "$f"; del="内容是本测试写的旧值，已删除临时文件" ;; esac
-    row "$label" "未落宿主机" "调用了 ${tool}，宿主机文件没被改成预期内容；${del}"
+    row "$label" "未落宿主机" "调用了 ${5}，宿主机文件没被改成预期内容；${del}"
   elif [ -f "$f" ]; then
     case "$(tr -d '\r\n' <"$f")" in HEYBE_T032_*) rm -f "$f" ;; esac
     row "$label" 未判定 "模型没调用 ${tool}（工具事件：$(tr '\n' ',' <"$LOG_DIR/t032-$tool-tools.txt")）"
   elif used "$tool" "$tool"; then
-    row "$label" "未落宿主机" "调用了 ${tool}，宿主机没有该文件（写进了沙箱/工作区）"
+    row "$label" "未落宿主机" "调用了 ${5}，宿主机没有该文件（写进了沙箱/工作区）"
   else
     row "$label" 未判定 "模型没调用 ${tool}（工具事件：$(tr '\n' ',' <"$LOG_DIR/t032-$tool-tools.txt")）"
   fi
@@ -106,15 +108,39 @@ c1() {
     || { row "$L" 未判定 "/v1 调用失败"; return; }
   c1_judge "$L" write_file "$f" "$tok" write_file
 }
+# C1b：/v1 没有“直接调用某个工具”的接口，请求里也不能限定工具（FastClaw v1.4.0 /v1 只有 chat/agents/sessions/usage），
+# 所以用写死的提示词：只许调用一次 edit_file，参数逐字给出，禁止 exec/write_file/apply_patch/read_file 等其他工具。
+# 是否真的调用了 edit_file 以流里的工具事件为准（SSE tool chunk，来自服务端 tool_call/tool_result）：
+# 只有 edit_file、没有任何其他工具才算有效；否则把文件恢复成原值重试，最多 T032_C1B_TRIES（默认 3）次，
+# 仍不行记 INCONCLUSIVE（未判定），绝不记 PASS/未落宿主机。每次的工具事件存 t032-edit_file-try<N>-tools.txt。
+c1e_only_edit() { # tools 文件 → 只有 edit_file 事件且至少一次 done
+  grep -q '^edit_file done$' "$1" && ! grep -qv '^edit_file ' "$1"
+}
 c1e() {
   info "C1b edit_file 改 ~/Documents 里的文件（验证 B1）"
-  local L="C1b edit_file 改 ~/Documents（B1）" old new f; old="HEYBE_T032_$(hex)"; new="HEYBE_T032_$(hex)"; f="$HOME/Documents/heybe-t032-${old#HEYBE_T032_}.txt"
+  local L="C1b edit_file 改 ~/Documents（B1）" old new f tries i ev="" tf
+  tries=${T032_C1B_TRIES:-3}; case "$tries" in ''|*[!0-9]*|0) tries=3 ;; esac
+  old="HEYBE_T032_$(hex)"; new="HEYBE_T032_$(hex)"; f="$HOME/Documents/heybe-t032-${old#HEYBE_T032_}.txt"
   [ -e "$f" ] && { row "$L" 未判定 "临时文件名已存在，未测"; return; }
   [ -d "$HOME/Documents" ] || { row "$L" 未判定 "宿主机没有 ~/Documents，未测"; return; }
-  printf '%s\n' "$old" >"$f"   # 测试自己先在宿主机建好这个新文件，看 edit_file 能不能改到它
-  chat edit_file "Use the edit_file tool (not exec, not write_file) on the file at the absolute path '$f': replace the text $old with $new . Then reply DONE." \
-    || { case "$(tr -d '\r\n' <"$f")" in HEYBE_T032_*) rm -f "$f" ;; esac; row "$L" 未判定 "/v1 调用失败"; return; }
-  c1_judge "$L" edit_file "$f" "$new" edit_file
+  tf="$LOG_DIR/t032-edit_file-tools.txt"
+  for i in $(seq 1 "$tries"); do
+    # 每次都由测试自己把这个新文件写回原值（上一次无效尝试可能动过它），看 edit_file 能不能改到宿主机
+    printf '%s\n' "$old" >"$f"
+    if ! chat edit_file "Call the edit_file tool exactly once with exactly these JSON arguments: {\"path\":\"$f\",\"old_string\":\"$old\",\"new_string\":\"$new\"} . Do NOT call exec, write_file, apply_patch, read_file, or any other tool, and do not call edit_file a second time. If edit_file returns an error, do not try another tool; just reply FAILED. Otherwise reply DONE."; then
+      : >"$tf"
+    fi
+    cp "$tf" "$LOG_DIR/t032-edit_file-try$i-tools.txt"
+    if c1e_only_edit "$tf"; then
+      info "C1b 第 ${i}/${tries} 次：工具事件只有 edit_file，判定"
+      c1_judge "$L" edit_file "$f" "$new" "edit_file（第 ${i} 次尝试）"
+      return
+    fi
+    ev="${ev}第${i}次[$(sort -u "$tf" | tr '\n' ',' | sed 's/,$//')] "
+    info "C1b 第 ${i}/${tries} 次无效（工具事件：$(sort -u "$tf" | tr '\n' ',' | sed 's/,$//')），重试"
+  done
+  case "$(tr -d '\r\n' <"$f" 2>/dev/null)" in HEYBE_T032_*) rm -f "$f" ;; esac
+  row "$L" "INCONCLUSIVE（未判定）" "${tries} 次都没得到「只调用 edit_file」的工具事件，不能判定（${ev% }）；临时文件已清理"
 }
 c1p() {
   info "C1c apply_patch 新建 ~/Documents 文件（验证 B1）"
