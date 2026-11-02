@@ -8,6 +8,7 @@ Source of [heybe.dev](https://heybe.dev): a Cloudflare Worker that serves the st
 | `/zh` (`public/zh.html`) | Simplified Chinese landing page (`hreflang` pairs with `/`) |
 | `/demo` (`public/demo.html`) | Clickable design prototype of the desktop app (sample content) |
 | `/privacy` | Privacy note for the site and waitlist |
+| `/terms` | Terms of Service (Slovian Inc, Wyoming) |
 | `/robots.txt`, `/sitemap.xml`, `/og.png`, favicons | SEO and sharing assets |
 | `POST /api/waitlist` | Stores `{email, created_at, lang, source, ip_hash}` in D1 (`schema.sql`) |
 
