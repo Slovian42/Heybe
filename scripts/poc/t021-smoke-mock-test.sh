@@ -127,6 +127,6 @@ out=$(SMOKE_SKIP="$(heybe_t021_smoke_flag)"
 eq "desktop 默认 rc" "$rc" 1
 eq "desktop 默认做了冒烟" "$(wc -l <"$T/chat-called" | tr -d ' ')" 1
 eq "desktop 默认结果码" "$(heybe_t021_result_code "$REPORT")" E_KEY_INVALID
-DEEPSEEK_API_KEY=""
+unset DEEPSEEK_API_KEY
 
 echo "t021-smoke-mock-test: ${n} 条断言全部通过"
