@@ -168,6 +168,28 @@ describe("FastClawCliProvisioner", () => {
     expect(await new FastClawCliProvisioner({ run: runner, env: {} }).provision(cfgFor("openai"), KEY)).toBe("agt_old9");
     expect(seen[1]).toContain("--id");
   });
+  it("key changed → re-provision updates the existing agent (--id) with the new key (#19 复验问题 1)", async () => {
+    const calls: Array<{ args: string[]; env: Record<string, string> }> = [];
+    let created = false;
+    const runner: CliRunner = async (args, env) => {
+      calls.push({ args, env });
+      if (!created) {
+        created = true;
+        return { code: 0, stdout: "Agent ID: agt_k1\n", stderr: "" };
+      }
+      return args.includes("--id")
+        ? { code: 0, stdout: "Agent ID: agt_k1\n", stderr: "" }
+        : { code: 1, stdout: "", stderr: 'agent "heybe-probe-deepseek" already exists (id agt_k1), pass --id' };
+    };
+    const p = new FastClawCliProvisioner({ run: runner, env: { PATH: "/bin" } });
+    const NEW = "sk-new-key-0000zzzz";
+    expect(await p.provision(cfgFor("deepseek"), KEY)).toBe("agt_k1");
+    expect(await p.provision(cfgFor("deepseek"), NEW)).toBe("agt_k1");
+    const last = calls[calls.length - 1];
+    expect(last.args).toEqual(expect.arrayContaining(["--id", "agt_k1"]));
+    expect(last.env[PROVIDER_KEY_ENV]).toBe(NEW);
+    expect(calls.flatMap((c) => c.args).join(" ")).not.toMatch(/sk-new-key|leak/);
+  });
   it("openai_compatible uses config id as provider; ollama has no key flag", () => {
     expect(initArgs(cfgFor("openai_compatible"), true)).toEqual(expect.arrayContaining(["--provider", "my-relay", "--api-base", "https://relay.example.com/v1"]));
     expect(initArgs(cfgFor("ollama"), false)).not.toContain("--api-key-env");

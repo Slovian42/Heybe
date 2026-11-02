@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # Heybe 桌面版一键开发启动（#19-b，Apple Silicon Mac）。
 # 用法：
-#   scripts/dev/heybe-desktop-dev.sh          预检 → （首次）跑 t021 准备 FastClaw+DeepSeek → pnpm install → tauri dev
+#   scripts/dev/heybe-desktop-dev.sh          预检 → DeepSeek key 连接测试 → （首次或 key 变了）跑 t021 建/更新 Agent
+#                                             → pnpm install → tauri dev
 #   scripts/dev/heybe-desktop-dev.sh check    退出 Heybe 后检查：没有残留的 fastclaw / 本地服务进程
 #   --yes          better-sqlite3 与当前 node 不匹配时直接 pnpm rebuild，不先问
 #   --mirror cn    本次编译 Rust 时 crates.io 走国内镜像（默认 rsproxy.cn，HEYBE_CARGO_MIRROR 可改）；
 #                  也可写 HEYBE_MIRROR=cn。只给这次的 cargo 传 --config，不改 ~/.cargo/config（scripts/lib-mirror.sh）
 # Node：仓库固定 Node 22（.nvmrc）。启动前会实际加载一次 better-sqlite3，不匹配（NODE_MODULE_VERSION）时
 #   提示切换 Node 或重建（scripts/dev/lib-node-check.sh）。
-# 密钥：只从 600 文件读进环境变量，不打印、不落别的盘。窗口里的服务地址和令牌由 Tauri 每次随机生成。
+# 密钥：只从 600 文件读进 shell 变量，不打印、不落别的盘。窗口里的服务地址和令牌由 Tauri 每次随机生成。
+# 换 key：每次启动都比对 ~/.heybe-poc.env 里 DEEPSEEK_API_KEY 的 sha256 和数据目录里的指纹
+#   （${T021_HOME}/deepseek-key.sha256，600，只有哈希）。不一样（或没有指纹，比如 10-29 建的旧目录）就重跑 t021：
+#   带 --id 原地更新 Agent 的 key 并做一次真实对话。原地更新失败时把旧目录改名为 heybe-t021.bak-时间（不删）再重建。
+#   HEYBE_SKIP_KEY_TEST=1 跳过启动时的 DeepSeek 连接测试。
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -16,6 +21,12 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 . "$REPO_ROOT/scripts/dev/lib-node-check.sh"
 # shellcheck source=../lib-mirror.sh
 . "$REPO_ROOT/scripts/lib-mirror.sh"
+# shellcheck source=../poc/lib-fc-env.sh
+. "$REPO_ROOT/scripts/poc/lib-fc-env.sh"
+# shellcheck source=../poc/lib-fc-agent.sh
+. "$REPO_ROOT/scripts/poc/lib-fc-agent.sh"
+# shellcheck source=../poc/lib-fc-key.sh
+. "$REPO_ROOT/scripts/poc/lib-fc-key.sh"
 CMD="" YES=0 MIRROR="${HEYBE_MIRROR:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -34,8 +45,10 @@ FC_HOME="${T021_HOME}/fastclaw-home"
 FC_BIN="${HEYBE_FASTCLAW_BIN:-$HOME/.local/opt/fastclaw/bin/fastclaw}"
 PORT="${HEYBE_T021_PORT:-18963}"
 KEY_FILE="${T021_HOME}/fastclaw-apikey"
+POC_ENV="${HEYBE_POC_ENV:-$HOME/.heybe-poc.env}"
 
 ok() { printf '  \033[32m✓\033[0m %s\n' "$*"; }
+warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 die() { printf '  \033[31m✗ [%s]\033[0m %s\n' "$1" "$2" >&2; exit 1; }
 
 leftovers() { pgrep -fl "fastclaw|services/task-manager/src/main.ts" | grep -v -E "pgrep|heybe-desktop-dev" || true; }
@@ -69,10 +82,37 @@ if port_busy; then
   die E_FC_PORT_BUSY "端口 ${PORT} 被别的程序占用（lsof -nP -iTCP:${PORT} -sTCP:LISTEN 查是谁），或者 HEYBE_T021_PORT=别的端口"
 fi
 
-if [ ! -s "$KEY_FILE" ] || [ ! -x "$FC_BIN" ]; then
-  echo "== 首次准备：FastClaw + DeepSeek Agent（scripts/poc/t021-mac.sh）"
-  "$REPO_ROOT/scripts/poc/t021-mac.sh"
+echo "== DeepSeek key"
+rc=0; heybe_load_poc_key "$POC_ENV" || rc=$?
+case "$rc" in
+  0) ;;
+  2) die E_ENV_MISSING "找不到 ${POC_ENV}：写一行 DEEPSEEK_API_KEY=…，再 chmod 600" ;;
+  3) die E_ENV_PERM "${POC_ENV} 权限必须是 600：chmod 600 ${POC_ENV}" ;;
+  *) die E_ENV_EMPTY "${POC_ENV} 里没有 DEEPSEEK_API_KEY=" ;;
+esac
+if [ "${HEYBE_SKIP_KEY_TEST:-0}" != 1 ]; then
+  code="$(heybe_deepseek_probe DEEPSEEK_API_KEY)"
+  case "$code" in
+    200) ok "连接测试通过：DeepSeek 认这个 key" ;;
+    401|403) die E_KEY_INVALID "DeepSeek 不认这个 key（HTTP ${code}）：模型密钥无效，请到 ${POC_ENV} 换成有效的 DEEPSEEK_API_KEY（保持 600），再重新运行本脚本" ;;
+    000) warn "连不上 DeepSeek（网络或超时），跳过连接测试；对话时如果失败，界面会显示具体原因" ;;
+    *) warn "DeepSeek 连接测试返回 HTTP ${code}，先继续；对话时如果失败，界面会显示具体原因" ;;
+  esac
 fi
+HEYBE_KEY_SYNC_FORCE=0
+if [ ! -s "$KEY_FILE" ] || [ ! -x "$FC_BIN" ]; then HEYBE_KEY_SYNC_FORCE=1; fi
+case "$(heybe_key_state "$T021_HOME" DEEPSEEK_API_KEY)/${HEYBE_KEY_SYNC_FORCE}" in
+  same/0) ok "key 没变（指纹一致），复用 ${T021_HOME}" ;;
+  */1) echo "== 首次准备：FastClaw + DeepSeek Agent（scripts/poc/t021-mac.sh）" ;;
+  new/*) echo "== 数据目录里还没有 key 指纹（旧版本建的），按换过 key 处理：更新 Agent 的 key（scripts/poc/t021-mac.sh）" ;;
+  *) echo "== ${POC_ENV} 里的 DEEPSEEK_API_KEY 变了：更新 Agent 的 key（scripts/poc/t021-mac.sh）" ;;
+esac
+rc=0
+# t021 自己再从 600 文件读一次 key；这里的 key 不传给它（env -u），只用来比对指纹
+heybe_key_sync "$T021_HOME" env -u DEEPSEEK_API_KEY "$REPO_ROOT/scripts/poc/t021-mac.sh" || rc=$?
+unset DEEPSEEK_API_KEY
+[ -n "$HEYBE_KEY_SYNC_BACKUP" ] && warn "原地更新失败，旧数据目录已改名备份为 ${HEYBE_KEY_SYNC_BACKUP}（没删），已重建"
+[ "$rc" = 0 ] || die E_T021 "t021 没跑通（见上面的报错；报告在 ${T021_HOME}/t021-report.txt）"
 [ -s "$KEY_FILE" ] || die E_APIKEY "没有 $KEY_FILE，请先跑通 scripts/poc/t021-mac.sh"
 [ "$(stat -f %Lp "$KEY_FILE")" = "600" ] || die E_PERM "$KEY_FILE 权限必须是 600"
 ok "FastClaw 数据目录 ${FC_HOME}，端口 ${PORT}"

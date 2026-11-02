@@ -47,11 +47,24 @@ Tauri 壳（src-tauri/src/service.rs，Supervisor）
 - 一键开发脚本启动前也会探测端口：有 FastClaw 在响应报 `E_FC_FOREIGN_GATEWAY`，被别的程序占着报 `E_FC_PORT_BUSY`。
 - 退出（Cmd+Q）：壳给进程组发 SIGTERM，3 秒后 SIGKILL；服务收到 SIGTERM / 标准输入关闭（壳意外死掉）都会先停 gateway。gateway 自己挂了，服务也跟着退出并由壳重启。
 - 开发版命令：debug 构建用 `pnpm -C services/task-manager start`（tsx）；可用 `HEYBE_SERVICE_CMD` 覆盖。发布版打包成 sidecar 留给 19-h。
-- 一键开发脚本：`scripts/dev/heybe-desktop-dev.sh`（预检 → 首次自动跑 `scripts/poc/t021-mac.sh` 准备 FastClaw + DeepSeek → `pnpm install` → Node/better-sqlite3 检查 → `pnpm tauri dev`）；`… check` 检查残留进程。
+- 一键开发脚本：`scripts/dev/heybe-desktop-dev.sh`（预检 → DeepSeek key 连接测试 → 首次或 key 变了自动跑 `scripts/poc/t021-mac.sh` 准备/更新 FastClaw + DeepSeek Agent → `pnpm install` → Node/better-sqlite3 检查 → `pnpm tauri dev`）；`… check` 检查残留进程。
 - Node 版本：仓库固定 Node 22（`.nvmrc`）。better-sqlite3 是原生模块，按安装时的 Node 编译；换了 Node（例如 Mac 默认变成 v26）会报 `NODE_MODULE_VERSION` 不一致、本地服务起不来。脚本在启动前实际加载一次，不匹配时用中文说明原因，并提示 `nvm use` / `fnm use` 或 `pnpm -r rebuild better-sqlite3`；交互终端会先问，加 `--yes` 直接重建。`providers-mac-check.sh` 同样检查。
 - 国内镜像（可选，默认关）：`scripts/dev/heybe-desktop-dev.sh --mirror cn`（或 `HEYBE_MIRROR=cn`）让这次编译的 crates.io 走 `sparse+https://rsproxy.cn/index/`，`HEYBE_CARGO_MIRROR=<索引地址>` 可换成别的镜像。实现是给这次的 `cargo run` 传 `--config source.crates-io.replace-with=…`（经 `pnpm tauri dev -- <参数>`），并在本进程设 `CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse`，**不改 `~/.cargo/config.toml`**，也不需要在仓库里放 `.cargo/config.toml`（之前手工放的可以删掉）。见 `scripts/lib-mirror.sh`，测试 `scripts/mirror-mock-test.sh`。
 
 - 图标：`apps/desktop/src-tauri/icons/` 目前是**占位图标**（纯色底 + H，RGBA），正式图标由品牌方提供后覆盖同名文件（见该目录 `README.md`）。缺图标时 `generate_context!` 编译期 panic，`apps/desktop/test/icons.test.ts` 检查 `tauri.conf.json` 引用的图标都在。
+
+## 换 DeepSeek key（Mac 复验问题 1）
+
+- 现象：`heybe-desktop-dev.sh` 以前只在第一次（没有 `fastclaw-apikey` 或 FastClaw 二进制时）跑 t021 建 Agent，之后一直复用 `~/.local/opt/heybe-t021`。FastClaw v1.4.0 在 `agents init` 那一刻把 key 存进它自己的数据库（system 级 provider 行，按提供方名字 `deepseek` 存一份），之后不再读 `~/.heybe-poc.env`，所以 10-29 用旧 key 建的 Agent 换了 key 也一直 401。
+- FastClaw v1.4.0 没有单独改 key 的命令或 /v1 接口（/v1 只有 chat、agents、sessions）。现成的办法就是已批准的 `fastclaw agents init <名字> --id <agt_…> --api-key-env DEEPSEEK_API_KEY`：对已有 Agent 是原地更新（输出 `Agent "…" updated`），不换 owner、不生成新密码，重新从环境变量读 key；gateway 在跑时 CLI 会发 SIGHUP 让它重新加载。用真 FastClaw v1.4.0 + mock 上游核对过：更新后下一次对话上游收到的就是新 key（只比对了 Authorization 的 sha256）。
+- 现在的做法（`scripts/poc/lib-fc-key.sh`）：
+  - 每次启动比对 `~/.heybe-poc.env` 里 key 的 sha256 和 `~/.local/opt/heybe-t021/deepseek-key.sha256`（一行 `sha256:<hex>`，权限 600，不存明文也不存末 4 位）。
+  - 没变：直接复用。变了，或者没有指纹文件（旧版本建的目录）：重跑 t021。t021 现在先按名字查 Agent id，已有就带 `--id` 原地更新，然后做一次真实流式对话，成功写指纹。
+  - 原地更新失败（t021 以退出码 3 结束）：把旧目录改名为 `heybe-t021.bak-<时间>`（不删），再完整重建一次。
+  - key 只在 shell 变量里，经 `fc_env_exec` 只交给那一次 `agents init` 子进程；`agents init` 的输出（新建时含管理员密码）整段丢弃。
+  - 启动时连接测试：用 key 调一次 DeepSeek `GET /models`（不花钱），HTTP 401/403 → 红色 `✗ [E_KEY_INVALID]`，中文提示到 `~/.heybe-poc.env` 换 key；连不上或其他状态码只给黄色提示、继续启动。`HEYBE_SKIP_KEY_TEST=1` 跳过。
+- #85 的 provisioner（设置页“测试连接”）：每次测试都用当前 key 跑一次 `agents init`，已存在时按 `already exists (id …)` 带 `--id` 重试，所以不会卡在旧 key（加了单测：换 key 后第二次测试带 `--id` 且子进程拿到新 key）。注意 FastClaw 的 key 是按提供方名字存的：同一个 `FASTCLAW_HOME` 里测试 `deepseek` 会同时更新聊天 Agent 用的 deepseek key（这正是“一提供方一把 key”的设计）。设置页保存 key（`PUT /providers/keys/:ref`）目前只写钥匙串，还没接到聊天 Agent（首启引导 19-g / #16-c 再接）。
+- 测试：`scripts/poc/key-sync-mock-test.sh`（假 fastclaw + 假 DeepSeek，CI 里跑）。
 
 ## 后续（不在本 PR）
 
