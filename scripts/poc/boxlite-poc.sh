@@ -8,8 +8,12 @@
 #   单步重跑：serve = 启动（已在跑则复用）+ 探测前缀；ws-probe / fc-compat 可单独跑，不会重装。
 # BoxLite REST（0.10.x 实测源码）：serve 无租户段，GET /v1/boxes；0.9.5 及更早是 /v1/default/boxes。
 #   脚本先探测（/v1/me 的 prefix → /v1 → /v1/default → /api/v1…），把命中的前缀写进报告；全 404 就报错并打印探测表。
-#   BOXLITE_API_BASE=/v1 可强制前缀。BOXLITE_SHIM=auto|1|0：FastClaw v1.4.0 发送的 auto_remove 被 0.10.x 拒绝时，
-#   自动在 127.0.0.1:${BOXLITE_SHIM_PORT:-8101} 起兼容垫片（boxlite-shim.py，只删这个字段）。
+#   BOXLITE_API_BASE=/v1 可强制前缀。
+# BoxLite 代理（services/task-manager/src/boxlite-proxy.ts，tsx 运行，只监听 127.0.0.1:${BOXLITE_PROXY_PORT:-8101}）：
+#   FastClaw 一律经代理连 serve。代理给每个建箱请求（POST …/boxes）强制写入
+#   "network":{"outbound":{"mode":"disabled"},"inbound":{"mode":"disabled"}}（覆盖原值，不可关闭），
+#   fc-compat 判定 reject_auto_remove 时再删掉 auto_remove；拒绝 import/clone 建箱（403）。
+#   需要先在仓库根目录跑过 pnpm install（用 services/task-manager/node_modules/.bin/tsx）。
 # Lima 镜像（仅新建实例时生效）：LIMA_MIRROR=tuna|nju [LIMA_UBUNTU=26.04|24.04]，或 LIMA_IMAGE_URL=https://…，
 #   或 LIMA_IMAGE_FILE=/abs/path.img（本地文件）；LIMA_IMAGE_DIGEST=sha256:… 可选（预设镜像自带）。
 # 镜像（可选，默认关）：--mirror cn 或 HEYBE_MIRROR=cn → lima 组的 docker pull 先走 HEYBE_DOCKER_MIRROR
@@ -41,9 +45,11 @@ RESULTS="$POC_HOME/results.tsv"
 REPORT="$POC_HOME/report.md"
 STATUS_DIR="$POC_HOME/status"
 BOXLITE_PORT="${BOXLITE_PORT:-8100}"
-BOXLITE_SHIM="${BOXLITE_SHIM:-auto}"                # auto=按 fc-compat 结果决定；1=强制；0=关闭
-BOXLITE_SHIM_PORT="${BOXLITE_SHIM_PORT:-8101}"
+BOXLITE_PROXY_PORT="${BOXLITE_PROXY_PORT:-8101}"    # FastClaw → 代理（强制禁出网）→ serve；没有关闭开关
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TM_DIR="$(cd "$SCRIPT_DIR/../../services/task-manager" && pwd)"
+PROXY_TSX="${HEYBE_TSX:-$TM_DIR/node_modules/.bin/tsx}"
+PROXY_MAIN="$TM_DIR/src/boxlite-proxy-main.ts"
 # shellcheck source=../lib-mirror.sh
 . "$SCRIPT_DIR/../lib-mirror.sh"
 _ARGS=(); _MIRROR="${HEYBE_MIRROR:-}"   # --mirror 可写在任意位置，其余参数照旧是 <step> [backend]
@@ -225,8 +231,8 @@ step_ws_probe() {
   local base; base=$(bl_url "$API_BASE")
   local t0 t1 box exe code o="$LOG_DIR/ws-probe-http.json"
   t0=$(now_ms)
-  # 0.10.x CreateBoxRequest 是 deny_unknown_fields 且没有 auto_remove：只发 image，结束时显式 DELETE
-  code=$(http_code POST "$base/boxes" "$o" "{\"image\":\"$SANDBOX_IMAGE\"}" 900)
+  # 0.10.x CreateBoxRequest 是 deny_unknown_fields 且没有 auto_remove：只发 image + 禁出网，结束时显式 DELETE
+  code=$(http_code POST "$base/boxes" "$o" "{\"image\":\"$SANDBOX_IMAGE\",\"network\":{\"outbound\":{\"mode\":\"disabled\"}}}" 900)
   [ "$code" = 201 ] || [ "$code" = 200 ] || fail "创建 box 失败：POST ${API_BASE}/boxes → HTTP ${code}：$(head -c 300 "$o" 2>/dev/null)"
   box=$(python3 -c 'import sys,json;print(json.load(open(sys.argv[1]))["box_id"])' "$o") || fail "创建 box 响应里没有 box_id：$(head -c 300 "$o")"
   code=$(http_code POST "$base/boxes/$box/start" "$o" "" 300)
@@ -295,33 +301,66 @@ step_fc_compat() {
   echo "探针响应（HTTP ${code}）：$(head -c 300 "$o" 2>/dev/null)"
   case $verdict in
     reject_auto_remove)
-      if [ "$BOXLITE_SHIM" = 0 ]; then
-        pass "已判定：BoxLite 拒绝 FastClaw v1.4.0 的 auto_remove（HTTP ${code}）；BOXLITE_SHIM=0，fastclaw-boxlite 将直连并预期创建 box 失败"
-      else
-        pass "已判定：BoxLite 拒绝 FastClaw v1.4.0 的 auto_remove（HTTP ${code}）→ fastclaw-boxlite 经兼容垫片 127.0.0.1:${BOXLITE_SHIM_PORT} 转发"
-      fi ;;
-    ok) pass "FastClaw v1.4.0 创建请求体与该 BoxLite 版本兼容（HTTP ${code}）" ;;
+      pass "已判定：BoxLite 拒绝 FastClaw v1.4.0 的 auto_remove（HTTP ${code}）→ 代理 127.0.0.1:${BOXLITE_PROXY_PORT} 删除 auto_remove 并强制禁出网" ;;
+    ok) pass "FastClaw v1.4.0 创建请求体与该 BoxLite 版本兼容（HTTP ${code}）→ 代理只强制禁出网" ;;
     *) fail "无法判定 FastClaw 创建请求体是否兼容（HTTP ${code}，响应见 ${o}）" ;;
   esac
 }
 
-shim_needed() {
-  case $BOXLITE_SHIM in 1) return 0 ;; 0) return 1 ;; esac
-  [ "$(cat "$COMPAT_FILE" 2>/dev/null)" = reject_auto_remove ]
+strip_auto_remove() { [ "$(cat "$COMPAT_FILE" 2>/dev/null)" = reject_auto_remove ] && echo 1 || echo 0; }
+proxy_client_key_file() { echo "$POC_HOME/boxlite/proxy-client.key"; }
+# curl_k <key> curl参数…：Authorization 头经 stdin 配置（curl -K -）传给 curl，key 不进任何 argv
+curl_k() {
+  local k=$1
+  shift
+  curl -K - "$@" <<EOF
+header = "Authorization: Bearer ${k}"
+EOF
 }
-start_shim() {
+new_key_file() { # path：生成随机 key 写入 600 文件（python 直接写文件，不经终端/argv）
+  mkdir -p "$(dirname "$1")"
+  ( umask 077; python3 -c 'import secrets,sys;open(sys.argv[1],"w").write(secrets.token_urlsafe(32))' "$1" )
+  chmod 600 "$1"
+}
+read_key_file() { # path → 打印 key（只用于 $(…) 赋值给 shell 变量）
+  [ -s "$1" ] || fail "缺少 ${1}"
+  [ "$(file_mode "$1")" = 600 ] || fail "${1} 权限不是 600"
+  cat "$1"
+}
+proxy_up() { # 代理在跑且认得当前 client key
+  local k; k=$(read_key_file "$(proxy_client_key_file)") || return 1
+  [ "$(curl_k "$k" -sS -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:${BOXLITE_PROXY_PORT}${API_BASE}/boxes" 2>/dev/null)" = 200 ]
+}
+# shellcheck disable=SC2034 # HEYBE_BOXLITE_* 由 fc_env_bg 按名字导出给代理进程
+start_proxy() {
   load_api_base
-  if curl -sS -o /dev/null -m 2 "http://127.0.0.1:${BOXLITE_SHIM_PORT}${API_BASE}/boxes" 2>/dev/null; then
-    pass "兼容垫片已在 127.0.0.1:${BOXLITE_SHIM_PORT} 运行"; return 0
+  [ -x "$PROXY_TSX" ] || fail "找不到 ${PROXY_TSX}（先在仓库根目录跑 pnpm install）"
+  need node
+  if [ -s "$(proxy_client_key_file)" ] && proxy_up; then
+    pass "BoxLite 代理已在 127.0.0.1:${BOXLITE_PROXY_PORT} 运行（复用）"; return 0
   fi
-  nohup python3 "$SCRIPT_DIR/boxlite-shim.py" "$BOXLITE_SHIM_PORT" "$BOXLITE_PORT" >"$LOG_DIR/boxlite-shim.log" 2>&1 &
-  echo $! >"$POC_HOME/boxlite-shim.pid"
-  wait_http "http://127.0.0.1:${BOXLITE_SHIM_PORT}${API_BASE}/boxes" 10 || fail "兼容垫片未起来，见 ${LOG_DIR}/boxlite-shim.log"
-  rec "boxlite_shim=127.0.0.1:${BOXLITE_SHIM_PORT}"
-  pass "兼容垫片 127.0.0.1:${BOXLITE_SHIM_PORT} → 127.0.0.1:${BOXLITE_PORT}（只删除 POST …/boxes 里的 auto_remove）"
+  if [ -f "$POC_HOME/boxlite-proxy.pid" ]; then kill "$(cat "$POC_HOME/boxlite-proxy.pid")" 2>/dev/null || true; sleep 1; fi
+  new_key_file "$(proxy_client_key_file)"
+  local HEYBE_BOXLITE_CLIENT_KEY HEYBE_BOXLITE_PROXY_UPSTREAM HEYBE_BOXLITE_PROXY_PORT HEYBE_BOXLITE_PROXY_STRIP_AUTO_REMOVE
+  HEYBE_BOXLITE_CLIENT_KEY=$(read_key_file "$(proxy_client_key_file)")
+  HEYBE_BOXLITE_PROXY_UPSTREAM="http://127.0.0.1:${BOXLITE_PORT}"
+  HEYBE_BOXLITE_PROXY_PORT=$BOXLITE_PROXY_PORT
+  HEYBE_BOXLITE_PROXY_STRIP_AUTO_REMOVE=$(strip_auto_remove)
+  # key 只经环境变量交给代理（fc_env_bg 只导出列出的变量；值不进 argv）
+  fc_env_bg "$POC_HOME/boxlite-proxy.pid" \
+    "HEYBE_BOXLITE_PROXY_UPSTREAM HEYBE_BOXLITE_PROXY_PORT HEYBE_BOXLITE_PROXY_STRIP_AUTO_REMOVE HEYBE_BOXLITE_CLIENT_KEY" \
+    nohup "$PROXY_TSX" "$PROXY_MAIN" >"$LOG_DIR/boxlite-proxy.log" 2>&1
+  HEYBE_BOXLITE_CLIENT_KEY=""
+  local _i; for _i in $(seq 1 20); do proxy_up && break; sleep 1; done
+  proxy_up || fail "BoxLite 代理未起来，见 ${LOG_DIR}/boxlite-proxy.log"
+  lsof -nP -iTCP:"$BOXLITE_PROXY_PORT" -sTCP:LISTEN | awk 'NR>1{print $9}' | grep -qv '^127\.0\.0\.1:' \
+    && fail "BoxLite 代理监听了非回环地址"
+  rec "boxlite_proxy=127.0.0.1:${BOXLITE_PROXY_PORT} boxlite_proxy_strip_auto_remove=$(strip_auto_remove) boxlite_proxy_outbound=disabled"
+  pass "BoxLite 代理 127.0.0.1:${BOXLITE_PROXY_PORT} → 127.0.0.1:${BOXLITE_PORT}（建箱强制 outbound=disabled；auto_remove 删除=$(strip_auto_remove)）"
 }
 
 # ---------------------------------------------------------------- fastclaw gateway
+# shellcheck disable=SC2034 # BOXLITE_API_KEY 由 start_fastclaw 的 fc_env_bg 按名字导出
 fc_env() { # backend：导出该后端的 FastClaw 环境（不含 FASTCLAW_ALLOW_HOST_EXEC）
   unset FASTCLAW_ALLOW_HOST_EXEC
   export FASTCLAW_PORT FASTCLAW_HOME; FASTCLAW_HOME=$(home_for "$1"); mkdir -p "$FASTCLAW_HOME"
@@ -329,10 +368,10 @@ fc_env() { # backend：导出该后端的 FastClaw 环境（不含 FASTCLAW_ALLO
   if [ "$1" = boxlite ]; then
     # FastClaw 拼 {URL}/{PREFIX}/boxes：URL 不带路径，PREFIX=探测到的前缀去掉开头 /（0.10.x → v1；0.9.5 → v1/default）
     load_api_base
-    local port=$BOXLITE_PORT; if shim_needed; then port=$BOXLITE_SHIM_PORT; fi
-    export FASTCLAW_SANDBOX_BOXLITE_URL="http://127.0.0.1:${port}" FASTCLAW_SANDBOX_BOXLITE_PREFIX="${API_BASE#/}"
-    # serve 未设 --api-key / BOXLITE_SERVE_API_KEY 时 auth_allows 放行任何请求（serve/mod.rs）；FastClaw 要求非空，给占位值
-    export BOXLITE_API_KEY="${BOXLITE_API_KEY:-local-poc}"
+    # 一律经代理（强制禁出网）；FastClaw 的 BOXLITE_API_KEY = 代理的 client key（随机，600 文件）
+    export FASTCLAW_SANDBOX_BOXLITE_URL="http://127.0.0.1:${BOXLITE_PROXY_PORT}" FASTCLAW_SANDBOX_BOXLITE_PREFIX="${API_BASE#/}"
+    BOXLITE_API_KEY=""
+    if [ -s "$(proxy_client_key_file)" ]; then BOXLITE_API_KEY=$(read_key_file "$(proxy_client_key_file)"); fi
   else
     export DOCKER_HOST="unix://$HOME/.lima/$LIMA_NAME/sock/docker.sock"
   fi
@@ -341,7 +380,7 @@ fc_env() { # backend：导出该后端的 FastClaw 环境（不含 FASTCLAW_ALLO
 start_fastclaw() { # backend
   local backend=$1
   load_deepseek
-  if [ "$backend" = boxlite ] && shim_needed; then start_shim; fi
+  if [ "$backend" = boxlite ]; then start_proxy; fi
   fc_env "$backend"
   [ "$backend" = boxlite ] && rec "fastclaw_boxlite_url=${FASTCLAW_SANDBOX_BOXLITE_URL} fastclaw_boxlite_prefix=${FASTCLAW_SANDBOX_BOXLITE_PREFIX}"
   if curl -sS -o /dev/null -m 2 "http://127.0.0.1:$FASTCLAW_PORT/" 2>/dev/null; then
@@ -349,7 +388,7 @@ start_fastclaw() { # backend
     pass "FastClaw(backend=${backend}) 已在运行"; return 0
   fi
   # `fastclaw` 无子命令即启动 gateway（FC:cmd/fastclaw/main.go:127）
-  # 只传白名单环境变量；BOXLITE_API_KEY 是本地 serve 的占位值，显式放行；DEEPSEEK_API_KEY 不传（已在 init 时写库）
+  # 只传白名单环境变量；BOXLITE_API_KEY（代理 client key）显式放行；DEEPSEEK_API_KEY 不传（已在 init 时写库）
   fc_env_bg "$POC_HOME/fastclaw.pid" "BOXLITE_API_KEY" nohup fastclaw gateway --port "$FASTCLAW_PORT" >"$LOG_DIR/fastclaw-$backend.log" 2>&1
   echo "$backend" >"$POC_HOME/fastclaw.backend"
   wait_http "http://127.0.0.1:$FASTCLAW_PORT/" 30 || fail "FastClaw 未起来，见 ${LOG_DIR}/fastclaw-${backend}.log"
@@ -553,16 +592,15 @@ step_lima() {
 # ---------------------------------------------------------------- cleanup
 cleanup_fastclaw() {
   if [ -f "$POC_HOME/fastclaw.pid" ]; then kill "$(cat "$POC_HOME/fastclaw.pid")" 2>/dev/null || true; sleep 2; fi
-  if [ -f "$POC_HOME/boxlite-shim.pid" ]; then kill "$(cat "$POC_HOME/boxlite-shim.pid")" 2>/dev/null || true; fi
-  rm -f "$POC_HOME/boxlite-shim.pid"
+  if [ -f "$POC_HOME/boxlite-proxy.pid" ]; then kill "$(cat "$POC_HOME/boxlite-proxy.pid")" 2>/dev/null || true; fi
+  rm -f "$POC_HOME/boxlite-proxy.pid" "$(proxy_client_key_file)"
   rm -f "$POC_HOME/fastclaw.pid" "$POC_HOME/fastclaw.backend"
 }
 step_cleanup() {
   info "清理"
   cleanup_fastclaw
-  [ -f "$POC_HOME/boxlite-shim.pid" ] && kill "$(cat "$POC_HOME/boxlite-shim.pid")" 2>/dev/null || true
   [ -f "$POC_HOME/boxlite.pid" ] && kill "$(cat "$POC_HOME/boxlite.pid")" 2>/dev/null || true
-  rm -f "$POC_HOME/boxlite.pid" "$POC_HOME/boxlite-shim.pid" "$API_FILE" "$COMPAT_FILE" "$SECRET_FILE"
+  rm -f "$POC_HOME/boxlite.pid" "$API_FILE" "$COMPAT_FILE" "$SECRET_FILE"
   if command -v docker >/dev/null && [ -S "$HOME/.lima/$LIMA_NAME/sock/docker.sock" ]; then
     DOCKER_HOST="unix://$HOME/.lima/$LIMA_NAME/sock/docker.sock" docker ps -aq --filter label=fastclaw=sandbox \
       | xargs env DOCKER_HOST="unix://$HOME/.lima/$LIMA_NAME/sock/docker.sock" docker rm -f >/dev/null 2>&1 || true
@@ -594,15 +632,16 @@ step_report() {
       [ "$(cat "$STATUS_DIR/$s" 2>/dev/null)" = FAIL ] || continue
       echo "### $s"; echo '```'; tail -n 60 "$LOG_DIR/step-$s.log" 2>/dev/null
       case $s in
-        verify-*|fastclaw-*|setup-*) b=${s#*-}; echo "--- fastclaw-$b.log"; tail -n 40 "$LOG_DIR/fastclaw-$b.log" 2>/dev/null ;;
+        verify-*|fastclaw-*|setup-*) b=${s#*-}; echo "--- fastclaw-$b.log"; tail -n 40 "$LOG_DIR/fastclaw-$b.log" 2>/dev/null
+          [ "$b" = boxlite ] && { echo "--- boxlite-proxy.log"; tail -n 20 "$LOG_DIR/boxlite-proxy.log" 2>/dev/null; } ;;
         serve|ws-probe|fc-compat) echo "--- boxlite-serve.log"; tail -n 40 "$LOG_DIR/boxlite-serve.log" 2>/dev/null
-          echo "--- boxlite-shim.log"; tail -n 20 "$LOG_DIR/boxlite-shim.log" 2>/dev/null ;;
+          echo "--- boxlite-proxy.log"; tail -n 20 "$LOG_DIR/boxlite-proxy.log" 2>/dev/null ;;
         lima) echo "--- lima-start.log"; tail -n 40 "$LOG_DIR/lima-start.log" 2>/dev/null ;;
       esac; echo '```'; echo
     done
   } >"$raw" 2>&1
   # 脱敏：两个 key 的值 → ***；另外抹掉 token:/password/Bearer 形态
-  python3 - "$raw" "$REPORT" "$POC_ENV" "$(apikey_file boxlite)" "$(apikey_file docker)" <<'PY'
+  python3 - "$raw" "$REPORT" "$POC_ENV" "$(apikey_file boxlite)" "$(apikey_file docker)" "$(proxy_client_key_file)" <<'PY'
 import sys,re,os
 raw,out,envf,*kfs=sys.argv[1:]
 secrets=[]

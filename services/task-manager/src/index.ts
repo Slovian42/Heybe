@@ -113,3 +113,14 @@ export {
   type TestDeps,
 } from "./provider-connection.js";
 export { handleProviderRoute, type ProviderHttpDeps } from "./provider-http.js";
+export {
+  DISABLED_NETWORK,
+  isBlockedBoxRoute,
+  isCreateBoxRequest,
+  probeFcCompat,
+  rewriteCreateBox,
+  startBoxliteProxy,
+  type BoxliteProxy,
+  type BoxliteProxyOptions,
+  type FcCompatVerdict,
+} from "./boxlite-proxy.js";
