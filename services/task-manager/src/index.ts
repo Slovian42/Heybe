@@ -68,7 +68,7 @@ export {
   saveArtifact,
   type SavedArtifact,
 } from "./artifacts.js";
-export { MacKeychainSecretStore, MemorySecretStore, keyStatus, type SecretStore } from "./provider-secrets.js";
+export { MacKeychainSecretStore, MemorySecretStore, keyStatus, keychainAddCommand, type SecretStore, type SecurityRun } from "./provider-secrets.js";
 export { classifyProviderError, providerMessage, type ClassifiedProviderError } from "./provider-errors.js";
 export {
   FastClawCliProvisioner,

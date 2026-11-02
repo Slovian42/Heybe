@@ -36,4 +36,9 @@ FastClaw 会把上游错误转成 **HTTP 502 `agent_error`**，message 的格式
 - **provider 配置按名称全局共享**：所有用 `--provider deepseek` 的 Agent 共用最后一次 `agents init` 写入的 key 和 base。因此“测试连接”会**覆盖**正在使用的配置。v1 只允许每种类型配置一个；openai_compatible 用配置 id 作为 provider 名，彼此互不影响。
 - **建 Agent 走 CLI**：FastClaw v1.4.0 的 `/v1/agents` 不接受 provider、key、base 这些字段，所以只有 provisioning 用 CLI，对话仍然只走 /v1。
 - **fastclaw.db 中的 key 是明文**：用 700/600 权限缓解（`lockPrivateTree`），不对其加密。
-- **钥匙串写入时 key 会出现在 argv 上**：`security add-generic-password -w <key>` 运行期间，同一用户的 `ps` 能看到 key，进程存在时间很短。v1 接受这一点，后续可改用原生 Keychain API。
+- **钥匙串写入（2026-11-02 改）**：执行 `/usr/bin/security -i`（交互模式），把 `add-generic-password -U -s "heybe" -a "<keyRef>" -w "<key>"` 这一行从 **stdin** 写入。key 不出现在任何进程的 argv 上，`ps` 看不到。读取用 `find-generic-password -w`，值只从 stdout 返回。
+  - key 里不能有引号、反斜杠或控制字符，否则会拒绝写入。所有主流提供方的 key 都不含这些字符。
+  - `security -i` 里的命令即使失败，进程也是 0 退出，所以写入后会回读校验，不一致就报错。
+  - 单测 mock 了 `node:child_process.execFile`，断言每次调用的参数里都不含 key。
+  - 没选 Rust keyring / security-framework 的原因：task-manager 是 Node 进程，用 Rust 还要加 Tauri↔Node 的 IPC 传 key；而且 Linux CI 上测不了 Mac API。等 16-f 接入设置界面时可以再评估。
+  - 需要在 Mac 上验收：确认写入的条目能在“钥匙串访问”里看到；确认首次读取时没有 ACL 弹窗（条目由 `security` 创建，默认信任 `security`）。
