@@ -14,7 +14,7 @@ describe("schema migrations", () => {
     migrate(db);
     expect(readSchemaVersion(db)).toBe(LATEST_SCHEMA_VERSION);
     const versions = db.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as { version: number }[];
-    expect(versions.map((row) => row.version)).toEqual([1, LATEST_SCHEMA_VERSION]);
+    expect(versions.map((row) => row.version)).toEqual([1, 2, LATEST_SCHEMA_VERSION]);
     const cols = db.prepare("PRAGMA table_info(tasks)").all() as { name: string }[];
     expect(cols.map((col) => col.name)).toContain("idempotency_key");
     const triggers = db.prepare(

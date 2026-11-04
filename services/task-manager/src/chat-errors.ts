@@ -58,11 +58,23 @@ export function classifyUpstreamStatus(status: number, text: string): Classified
   return make("failed", "unknown", type && type !== "server_error" ? `${code}/${type}` : code);
 }
 
+/** FastClaw's own refusals when a tool needs a sandbox it does not have (internal/agent/tools/exec.go). */
+const SANDBOX_REFUSED = /sandbox (?:unavailable|required)|no sandbox is configured|host execution is restricted|sandbox[^.]{0,40}(?:denied|refused|not allowed)/i;
+
+/** Local service / gateway codes (services/task-manager/src/gateway.ts). */
+const SERVICE_CODE = /^E_FC_[A-Z_]{1,40}$/;
+
 /** Map FastClaw adapter errors to a UI reason without leaking upstream text or keys. */
 export function classifyChatError(err: unknown): ClassifiedChatError {
   const e = (err ?? {}) as ErrLike;
   const text = typeof e.message === "string" ? e.message : "";
   if (e.code === "stream_truncated") return make("interrupted", "interrupted");
+  if (e.code === "stream_idle_timeout") {
+    // The gateway connection went silent (no `: ping` either): the server-side outcome is unknown.
+    return { kind: "interrupted", reason: "timeout", code: "stream_idle_timeout", message: "本地运行时长时间没有任何回应，这一轮中断了，结果未知" };
+  }
+  if (typeof e.code === "string" && SERVICE_CODE.test(e.code)) return make("unavailable", "runtime_error", e.code);
+  if (SANDBOX_REFUSED.test(text) && !/API error \d{3}/.test(text)) return make("failed", "sandbox_denied", "sandbox_denied");
   const api = /API error (\d{3})\b/.exec(text);
   if (api) return classifyUpstreamStatus(Number(api[1]), text);
   // FastClaw could not reach the model API (after its own retries).

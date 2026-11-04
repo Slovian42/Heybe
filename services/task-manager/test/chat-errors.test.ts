@@ -121,3 +121,41 @@ describe("classifyChatError on observed FastClaw v1.4.0 errors", () => {
     expect(classifyChatError(null)).toMatchObject({ reason: "unknown", code: "unknown" });
   });
 });
+
+describe("#19 part 2: more honest reasons", () => {
+  it("idle stream timeout is an interruption with unknown outcome", () => {
+    expect(classifyChatError({ kind: "timeout", code: "stream_idle_timeout", message: "x" })).toEqual({
+      kind: "interrupted",
+      reason: "timeout",
+      code: "stream_idle_timeout",
+      message: "本地运行时长时间没有任何回应，这一轮中断了，结果未知",
+    });
+  });
+
+  it("maps E_FC_* service codes to the Chinese service text plus the code", () => {
+    const out = classifyChatError({ code: "E_FC_PORT_BUSY", message: "anything" });
+    expect(out).toMatchObject({ kind: "unavailable", reason: "runtime_error", code: "E_FC_PORT_BUSY" });
+    expect(out.message).toMatch(/端口/);
+    expect(out.message).toContain("E_FC_PORT_BUSY");
+    expect(classifyChatError({ code: "E_FC_SOMETHING_NEW" }).message).toContain("E_FC_SOMETHING_NEW");
+  });
+
+  it("names a sandbox refusal instead of a bare failure", async () => {
+    for (const m of [
+      "tool exec failed: sandbox unavailable",
+      "no sandbox is configured; refusing to run on host",
+      "sandbox required but no executor available",
+    ]) {
+      const err = await viaStream(m);
+      expect(classifyChatError(err)).toMatchObject({ kind: "failed", reason: "sandbox_denied" });
+      expect(classifyChatError(err).message).toBe(CHAT_ERROR_MESSAGES.sandbox_denied);
+    }
+  });
+
+  it("every reason has Chinese text and none is the bare 没做成", () => {
+    for (const [reason, text] of Object.entries(CHAT_ERROR_MESSAGES)) {
+      expect(text, reason).toMatch(/[\u4e00-\u9fff]/);
+      expect(text, reason).not.toBe("没做成");
+    }
+  });
+});
