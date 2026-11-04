@@ -50,10 +50,20 @@ def serve(host, handler):
     s = Srv((host, 0), handler); threading.Thread(target=s.serve_forever, daemon=True).start(); return s.server_address[1]
 
 class H401(http.server.BaseHTTPRequestHandler):
+    # 像真的 serve：GET /v1/config 是公开路由（永远 200）；其余不带 key → 401，FAKE_OPEN=1 时 200（serve 没拿到 key）
+    public_config = False
     def log_message(self, *a): pass
-    def do_GET(self):
-        code = 200 if os.environ.get("FAKE_OPEN") == "1" else 401
+    def reply(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        if n: self.rfile.read(n)
+        if self.public_config and self.path == "/v1/config": code = 200
+        else: code = 200 if os.environ.get("FAKE_OPEN") == "1" else 401
         self.send_response(code); self.send_header("Content-Length", "0"); self.end_headers()
+    do_GET = reply
+    do_POST = reply
+
+class Serve(H401):
+    public_config = True
 
 class GW(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -79,7 +89,7 @@ class GW(http.server.BaseHTTPRequestHandler):
 
 role = os.environ.get("FAKE_ROLE", "root")
 if role == "serve":
-    print(serve("127.0.0.1", H401), flush=True); time.sleep(3600)
+    print(serve("127.0.0.1", Serve), flush=True); time.sleep(3600)
 if role == "gateway":
     print(serve("0.0.0.0" if os.environ["FAKE_MODE"] == "bad" else "127.0.0.1", GW), flush=True); time.sleep(3600)
 
@@ -140,6 +150,7 @@ start_fake good false; run_check
 for i in 1 2 3 4 5 6 7 8; do has "第 ${i} 项 PASS" "PASS ${i}/8"; done
 has "汇总" "PASS 8 / FAIL 0"
 has "代理日志拒绝行单独计数" "拒绝 1 条"
+has "serve 的 /v1/config 公开 200 不算失败（#90 第三次复验第 1 项的根因）" "GET /v1/config=200，公开路由，不计"
 SERVE_PORT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["serve_port"])' "$STATE/service-state.json")
 if grep -qF ":${SERVE_PORT}/v1/config" "$T/prompt.txt" && ! grep -qF ':8100/' "$T/prompt.txt"; then ok "探测命令里宿主机端口换成了 serve 端口 ${SERVE_PORT}"
 else bad "探测命令没换端口"; fi

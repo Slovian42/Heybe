@@ -22,7 +22,7 @@ import { LOOPBACK_HOST } from "./constants.js";
 /** BoxLite ≥0.10 REST prefix (serve has no tenant segment). FastClaw builds {URL}/{PREFIX}/boxes. */
 export const BOXLITE_PREFIX = "v1";
 
-export type SandboxErrorCode = "E_BOXLITE_EXITED" | "E_BOXLITE_READY_TIMEOUT" | "E_BOXLITE_NO_AUTH" | "E_BOXLITE_COMPAT";
+export type SandboxErrorCode = "E_BOXLITE_EXITED" | "E_BOXLITE_READY_TIMEOUT" | "E_SANDBOX_UNAUTHENTICATED" | "E_BOXLITE_COMPAT";
 
 export class SandboxError extends Error {
   readonly code: SandboxErrorCode;
@@ -102,6 +102,43 @@ export interface SandboxHandle {
   stop(graceMs?: number): Promise<void>;
 }
 
+/** Protected routes probed at startup (no key, then a wrong key). /v1/config is public by design. */
+export const AUTH_PROBES: ReadonlyArray<{ method: "GET" | "POST"; path: string }> = [
+  { method: "GET", path: `/${BOXLITE_PREFIX}/boxes` },
+  { method: "POST", path: `/${BOXLITE_PREFIX}/boxes` },
+];
+
+/** Throws E_SANDBOX_UNAUTHENTICATED unless every protected probe answers 401 without a valid key. */
+export async function assertServeAuthenticated(serveUrl: string, doFetch: typeof fetch = fetch): Promise<void> {
+  for (const auth of [undefined, `Bearer ${generateKey()}`]) {
+    for (const p of AUTH_PROBES) {
+      const headers: Record<string, string> = { "content-type": "application/json" };
+      if (auth) headers.authorization = auth;
+      let status = 0;
+      try {
+        // POST body is deliberately invalid ({}), so even an open serve creates nothing.
+        const r = await doFetch(`${serveUrl}${p.path}`, {
+          method: p.method,
+          headers,
+          body: p.method === "POST" ? "{}" : undefined,
+          signal: AbortSignal.timeout(5000),
+        });
+        status = r.status;
+        await r.body?.cancel();
+      } catch {
+        status = 0;
+      }
+      if (status !== 401) {
+        throw new SandboxError(
+          "E_SANDBOX_UNAUTHENTICATED",
+          `boxlite serve 没有启用鉴权：${auth ? "带错误 key" : "不带 key"}的 ${p.method} ${p.path} 返回 ${status || "无响应"}（应为 401）。` +
+            "沙箱已停止，Heybe 不会在无鉴权的沙箱上继续运行",
+        );
+      }
+    }
+  }
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function startSandbox(opts: SandboxOptions): Promise<SandboxHandle> {
@@ -164,12 +201,10 @@ export async function startSandbox(opts: SandboxOptions): Promise<SandboxHandle>
       if (Date.now() >= deadline) throw new SandboxError("E_BOXLITE_READY_TIMEOUT", `boxlite serve 没有在 ${serveUrl} 就绪`);
       await sleep(200);
     }
-    // 2) The key must be enforced: without it, serve must answer 401 (else anyone local could create boxes).
-    const anon = await doFetch(`${serveUrl}/${BOXLITE_PREFIX}/boxes`, { signal: AbortSignal.timeout(5000) });
-    await anon.body?.cancel();
-    if (anon.status !== 401) {
-      throw new SandboxError("E_BOXLITE_NO_AUTH", `boxlite serve 不带 key 的请求返回 ${anon.status}（应为 401），拒绝使用`);
-    }
+    // 2) The key must be enforced. GET /v1/config is BoxLite's public route (200 even with a key),
+    //    so it says nothing about auth; probe protected routes instead: without a key and with a
+    //    wrong key, list and create must both answer 401. Anything else: stop serve, never run open.
+    await assertServeAuthenticated(serveUrl, doFetch);
     // 3) fc-compat decides only auto_remove; the network override is unconditional.
     const compat = await probeFcCompat(`${serveUrl}/${BOXLITE_PREFIX}/boxes`, serveKey, doFetch);
     if (compat === "unknown") throw new SandboxError("E_BOXLITE_COMPAT", "无法判定 FastClaw 建箱请求体与 BoxLite 是否兼容");

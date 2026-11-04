@@ -108,7 +108,17 @@ describe("startSandbox (fake boxlite serve)", () => {
   it("refuses a serve that does not enforce the key", async () => {
     const err = await startSandbox({ bin: FAKE_BOXLITE, env: parentEnv(boxliteHome("nokey")), log: () => undefined }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(SandboxError);
-    expect((err as SandboxError).code).toBe("E_BOXLITE_NO_AUTH");
+    expect((err as SandboxError).code).toBe("E_SANDBOX_UNAUTHENTICATED");
+    expect((err as Error).message).toContain("沙箱已停止");
+  });
+
+  it("refuses a serve that enforces the key on GET but not on POST, and kills it", async () => {
+    const home = boxliteHome("postopen");
+    const err = await startSandbox({ bin: FAKE_BOXLITE, env: parentEnv(home), log: () => undefined }).catch((e: unknown) => e);
+    expect((err as SandboxError).code).toBe("E_SANDBOX_UNAUTHENTICATED");
+    expect((err as Error).message).toContain("POST /v1/boxes");
+    const { pid } = JSON.parse(readFileSync(join(home, "record.json"), "utf8")) as { pid: number };
+    expect(() => process.kill(pid, 0)).toThrow(); // serve was stopped, not left running open
   });
 
   it("reports a serve that exits during startup", async () => {
@@ -176,5 +186,39 @@ describe("gateway gets the sandbox env (env only)", () => {
       await svc.stop();
     }
     await expect(fetch(`${seen?.childEnv?.set?.FASTCLAW_SANDBOX_BOXLITE_URL}/v1/config`)).rejects.toThrow();
+  });
+});
+
+describe("fake boxlite serve behaves like the real one (#90 Mac recheck 3, item 1)", () => {
+  const run = async (withKey: boolean) => {
+    const home = boxliteHome();
+    const port = await freeLoopbackPort();
+    const key = generateKey();
+    const { spawn } = await import("node:child_process");
+    const child = spawn(process.execPath, [FAKE_BOXLITE, ...boxliteServeArgs(port)], {
+      env: { PATH: process.env.PATH, BOXLITE_HOME: home, ...(withKey ? { BOXLITE_SERVE_API_KEY: key } : {}) },
+      stdio: "ignore",
+    });
+    try {
+      const base = `http://127.0.0.1:${port}`;
+      for (let i = 0; i < 100; i++) {
+        if (await fetch(`${base}/v1/config`).then((r) => r.ok, () => false)) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      const get = (await fetch(`${base}/v1/boxes`)).status;
+      const cfg = (await fetch(`${base}/v1/config`)).status;
+      const withAuth = (await fetch(`${base}/v1/boxes`, { headers: { authorization: `Bearer ${key}` } })).status;
+      return { get, cfg, withAuth };
+    } finally {
+      child.kill("SIGTERM");
+    }
+  };
+
+  it("given a key: no key → 401 on /v1/boxes, /v1/config stays public (200)", async () => {
+    expect(await run(true)).toEqual({ get: 401, cfg: 200, withAuth: 200 });
+  });
+
+  it("given no key: /v1/boxes answers 200 without a key (what the startup check must catch)", async () => {
+    expect(await run(false)).toEqual({ get: 200, cfg: 200, withAuth: 200 });
   });
 });

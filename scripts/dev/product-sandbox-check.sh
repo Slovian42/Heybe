@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 产品沙箱自检（#90 Mac 复验）：桌面版用 scripts/dev/heybe-desktop-dev.sh --sandbox boxlite 起来以后，另开一个终端跑。
 # 只打印计数和 PASS/FAIL，不打印任何密钥（密钥只在子进程环境变量里，不进 argv）。全部 PASS 才返回 0。
-#   1 serve、代理不带 key 都返回 401
+#   1 serve、代理不带 key 访问受保护路由（GET /v1/boxes、POST /v1/boxes）都返回 401
+#     （GET /v1/config 是 BoxLite 的公开路由，带不带 key 都是 200，只作参考，不算鉴权结果）
 #   2 本地服务进程树只监听 127.0.0.1
 #   3 代理强制 outbound=disabled（sandbox.log：启动行 1 条，建箱 POST 全部 outbound=disabled）
 #   4 gateway 部署模式 hosted（进程环境 FASTCLAW_DEPLOY=hosted；service-state.json deploy=hosted）
@@ -35,7 +36,10 @@ pass() { NPASS=$((NPASS + 1)); printf 'PASS %s/%s %s\n' "$1" "$TOTAL" "$2"; }
 fail() { NFAIL=$((NFAIL + 1)); printf 'FAIL %s/%s %s\n' "$1" "$TOTAL" "$2"; }
 finish() { echo "汇总：PASS ${NPASS} / FAIL ${NFAIL}（共 ${TOTAL} 项）"; [ "$NFAIL" = 0 ] && [ "$NPASS" = "$TOTAL" ]; exit $?; }
 json_get() { python3 -c 'import json,sys;v=json.load(open(sys.argv[1])).get(sys.argv[2]);print("" if v is None else v)' "$STATE_DIR/service-state.json" "$1" 2>/dev/null; }
-http_code() { curl -s -o /dev/null -m 5 -w '%{http_code}' "$1" 2>/dev/null || true; }
+http_code() { # url [POST] → HTTP 状态码（不带任何 key）
+  if [ "${2:-}" = POST ]; then curl -s -o /dev/null -m 5 -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' "$1" 2>/dev/null || true
+  else curl -s -o /dev/null -m 5 -w '%{http_code}' "$1" 2>/dev/null || true; fi
+}
 
 # ---- 0 状态文件（只有 pid/端口/模式）
 PID="$(tr -dc '0-9' <"$STATE_DIR/task-manager.pid" 2>/dev/null)"
@@ -51,10 +55,14 @@ if [ "$SANDBOX" != boxlite ] || [ -z "$GW" ] || [ -z "$SERVE" ] || [ -z "$PROXY"
   NFAIL=$TOTAL; finish
 fi
 
-# ---- 1 不带 key → 401
-c1="$(http_code "http://127.0.0.1:${SERVE}/v1/config")" c2="$(http_code "http://127.0.0.1:${PROXY}/v1/config")"
-if [ "$c1" = 401 ] && [ "$c2" = 401 ]; then pass 1 "serve、代理不带 key 都返回 401（serve ${c1}，代理 ${c2}）"
-else fail 1 "不带 key 应返回 401：serve ${c1:-无响应}，代理 ${c2:-无响应}"; fi
+# ---- 1 不带 key → 401（受保护路由；/v1/config 是公开路由，只参考）
+s_get="$(http_code "http://127.0.0.1:${SERVE}/v1/boxes")" s_post="$(http_code "http://127.0.0.1:${SERVE}/v1/boxes" POST)"
+p_get="$(http_code "http://127.0.0.1:${PROXY}/v1/boxes")" p_post="$(http_code "http://127.0.0.1:${PROXY}/v1/boxes" POST)"
+s_cfg="$(http_code "http://127.0.0.1:${SERVE}/v1/config")"
+c1="serve GET/POST /v1/boxes ${s_get:-无响应}/${s_post:-无响应}，代理 ${p_get:-无响应}/${p_post:-无响应}"
+if [ "$s_get" = 401 ] && [ "$s_post" = 401 ] && [ "$p_get" = 401 ] && [ "$p_post" = 401 ]; then
+  pass 1 "不带 key 都是 401：${c1}（serve 的 GET /v1/config=${s_cfg:-无响应}，公开路由，不计）"
+else fail 1 "不带 key 应全部 401：${c1}"; fi
 
 # ---- 2 只监听 127.0.0.1
 LISTEN="$(python3 "$PROBE" listen "$PID")"
