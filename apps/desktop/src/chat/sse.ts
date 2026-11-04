@@ -1,4 +1,4 @@
-import type { ChatServiceEvent } from "@heybe/shared-types/chat";
+import type { ChatWireEvent } from "@heybe/shared-types/chat";
 
 /** Body ended before `data: [DONE]`: local service or gateway went away mid-turn. */
 export class StreamTruncatedError extends Error {
@@ -8,10 +8,10 @@ export class StreamTruncatedError extends Error {
   }
 }
 
-const TYPES = new Set(["delta", "tool", "done", "error"]);
+const TYPES = new Set(["turn", "source", "delta", "tool", "done", "error", "stopped", "snapshot"]);
 
 /** Parse the Heybe service SSE (one JSON event per `data:` block, ends with [DONE]). */
-export async function* parseServiceSse(stream: ReadableStream<Uint8Array>): AsyncGenerator<ChatServiceEvent> {
+export async function* parseServiceSse(stream: ReadableStream<Uint8Array>): AsyncGenerator<ChatWireEvent> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -41,7 +41,7 @@ export async function* parseServiceSse(stream: ReadableStream<Uint8Array>): Asyn
             continue; // ignore malformed block rather than crash the UI
           }
           if (ev && typeof ev === "object" && TYPES.has((ev as { type?: string }).type ?? "")) {
-            yield ev as ChatServiceEvent;
+            yield ev as ChatWireEvent;
           }
         } else if (line.startsWith("data:")) {
           data.push(line.slice(5).replace(/^ /, ""));
