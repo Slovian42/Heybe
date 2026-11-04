@@ -34,7 +34,7 @@ import {
   type ResolvedRetry,
   type RetryOptions,
 } from "./retry.js";
-import { parseChatSse, SseParseError, SseTruncatedError, sseFailure } from "./sse.js";
+import { parseChatSse, SseIdleTimeoutError, SseParseError, SseTruncatedError, sseFailure, withIdleTimeout } from "./sse.js";
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -102,6 +102,16 @@ export interface SendMessageInput extends CallOptions {
   model?: string;
   params?: Record<string, unknown>;
   returnFiles?: "inline";
+  /**
+   * streamMessage only: fail with `kind: "timeout"`, code `stream_idle_timeout` when the body
+   * sends nothing (not even FastClaw's 15 s `: ping`) for this long. Unset = no idle limit.
+   */
+  idleTimeoutMs?: number;
+  /**
+   * streamMessage only: called once with the `model` field of the first chunk, i.e. the
+   * agent's configured `<provider>/<model>` that FastClaw used for this turn.
+   */
+  onModel?: (model: string) => void;
 }
 
 export interface CreateSessionInput {
@@ -353,8 +363,10 @@ export class FastClawClient {
         message: "FastClaw POST /v1/chat/completions returned an empty stream",
       });
     }
+    const idle = input.idleTimeoutMs;
+    const body = idle !== undefined && idle > 0 ? withIdleTimeout(res.body, idle) : res.body;
     try {
-      for await (const event of parseChatSse(res.body)) {
+      for await (const event of parseChatSse(body, { onModel: input.onModel })) {
         if (event.type === "error") {
           throw sseFailure({
             ...event.error,
@@ -376,6 +388,15 @@ export class FastClawClient {
         });
       }
       if (input.signal?.aborted) throw err;
+      if (err instanceof SseIdleTimeoutError) {
+        throw new FastClawError({
+          kind: "timeout",
+          method: "POST",
+          path,
+          code: "stream_idle_timeout",
+          message: `FastClaw POST /v1/chat/completions stream was silent for ${err.idleMs}ms`,
+        });
+      }
       // Body ended without [DONE], or the socket died mid-body (undici "terminated" etc.):
       // the gateway stopped / restarted or the connection broke. Server-side outcome unknown (#9).
       const cause =

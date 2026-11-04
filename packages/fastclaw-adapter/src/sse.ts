@@ -20,6 +20,44 @@ export class SseTruncatedError extends Error {
   }
 }
 
+/** No bytes at all (not even FastClaw's 15 s `: ping`) for the idle limit: the connection hung. */
+export class SseIdleTimeoutError extends Error {
+  constructor(readonly idleMs: number) {
+    super(`FastClaw SSE stream was silent for ${idleMs}ms`);
+    this.name = "SseIdleTimeoutError";
+  }
+}
+
+/**
+ * Wrap a body so it errors with SseIdleTimeoutError when no chunk arrives for `idleMs`.
+ * FastClaw v1.4.0 writes `: ping` every 15 s while a tool runs, so silence means a hung
+ * connection, not a slow model. The source is cancelled on timeout.
+ */
+export function withIdleTimeout(stream: ReadableStream<Uint8Array>, idleMs: number): ReadableStream<Uint8Array> {
+  const reader = stream.getReader();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const idle = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new SseIdleTimeoutError(idleMs)), idleMs);
+      });
+      try {
+        const r = await Promise.race([reader.read(), idle]);
+        if (r.done) controller.close();
+        else controller.enqueue(r.value);
+      } catch (err) {
+        if (err instanceof SseIdleTimeoutError) void reader.cancel(err).catch(() => undefined);
+        controller.error(err);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+}
+
 export async function* iterateSseData(stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -88,7 +126,9 @@ function eventsFromChunk(raw: V1ChatChunk): Array<V1StreamEvent | { type: "error
  */
 export async function* parseChatSse(
   stream: ReadableStream<Uint8Array>,
+  opts: { onModel?: (model: string) => void } = {},
 ): AsyncGenerator<V1StreamEvent | { type: "error"; error: V1ApiError }> {
+  let modelSeen = false;
   for await (const data of iterateSseData(stream)) {
     if (data === "[DONE]") return;
     let raw: V1ChatChunk;
@@ -98,6 +138,11 @@ export async function* parseChatSse(
       throw new SseParseError();
     }
     if (!raw || typeof raw !== "object") throw new SseParseError();
+    // Every FastClaw chunk carries the agent's configured `<provider>/<model>`; report it once.
+    if (!modelSeen && typeof raw.model === "string" && raw.model) {
+      modelSeen = true;
+      opts.onModel?.(raw.model);
+    }
     for (const event of eventsFromChunk(raw)) yield event;
   }
   throw new SseTruncatedError();
