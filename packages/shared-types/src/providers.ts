@@ -168,6 +168,8 @@ export type ProviderTestCode =
   | "context_too_small"
   | "provider_error"
   | "fastclaw_error"
+  /** camoufox-cli browser skill could not be turned off / read back as false (E_FC_SKILL_DISABLE_FAILED). */
+  | "skill_disable_failed"
   | "config_invalid";
 
 export interface ProviderTestResult {

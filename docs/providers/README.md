@@ -28,6 +28,7 @@
 | ollama_not_running | `/api/tags` 无法访问 |
 | context_too_small | Ollama 上下文小于 16384（结果为 warning，不算失败） |
 | fastclaw_error | FastClaw 本身出错，比如 Heybe 的 token 被拒，或 CLI 执行失败 |
+| skill_disable_failed | 建好 Agent 后没能关闭浏览器技能 camoufox-cli（写失败或读回不是 `false`，内部码 `E_FC_SKILL_DISABLE_FAILED`），不做对话测试 |
 | provider_error | 其他上游错误，提示语为“可能是提供方接口有变化” |
 
 FastClaw 会把上游错误转成 **HTTP 502 `agent_error`**，message 的格式为 `API error <上游状态>: <上游 body>`（2026-11-02 实测 DeepSeek 401）。DNS 失败或连接被拒时，FastClaw 内部会重试，Heybe 这边看到的是超时。所以 Ollama 先探测 `/api/tags`。

@@ -10,7 +10,7 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { connect } from "node:net";
 
-import { buildChildEnv } from "./child-env.js";
+import { buildChildEnv, type ChildEnvOptions } from "./child-env.js";
 
 /**
  * Args for the FastClaw child. Always the explicit foreground `gateway` subcommand, never a
@@ -60,6 +60,11 @@ export interface GatewayOptions {
   /** Health URL; default http://127.0.0.1:<port>/healthz. */
   healthUrl?: string;
   env?: Record<string, string | undefined>;
+  /**
+   * Extra names / fixed values for the gateway's env (buildChildEnv options), e.g. the BoxLite
+   * sandbox settings from sandbox.ts. Only the gateway gets them, not `fastclaw version`.
+   */
+  childEnv?: ChildEnvOptions;
   /** Total time to wait for /healthz after spawning (default 30 s). */
   readyTimeoutMs?: number;
   /** Poll backoff: starts at minDelayMs, doubles up to maxDelayMs (default 200 ms .. 2 s). */
@@ -182,13 +187,14 @@ const TAIL_BYTES = 4096;
 
 export async function startGateway(opts: GatewayOptions): Promise<GatewayHandle> {
   // Whitelisted env only: no model/provider keys, no HEYBE_* tokens (child-env.ts rules).
-  const { env } = buildChildEnv(opts.env ?? process.env);
+  const { env: plainEnv } = buildChildEnv(opts.env ?? process.env);
+  const { env } = opts.childEnv ? buildChildEnv(opts.env ?? process.env, opts.childEnv) : { env: plainEnv };
   const port = opts.port;
   const healthUrl = opts.healthUrl ?? `http://127.0.0.1:${port}/healthz`;
   const base = originOf(healthUrl);
   const doFetch = opts.fetchImpl ?? fetch;
   const inUse = opts.portInUse ?? tcpPortInUse;
-  const cli = opts.expectedVersion === undefined ? await readCliVersion(opts.bin, env) : (opts.expectedVersion ?? undefined);
+  const cli = opts.expectedVersion === undefined ? await readCliVersion(opts.bin, plainEnv) : (opts.expectedVersion ?? undefined);
 
   // 1) Never attach to a gateway (or anything) we did not start.
   if (await inUse(port)) {

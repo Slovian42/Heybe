@@ -62,3 +62,61 @@ fc_resolve_agent_id() {
 fc_agent_id_from_init() {
   printf '%s\n' "$1" | sed -n -e 's/^Agent ID:[[:space:]]*\(agt_[A-Za-z0-9_-]*\).*/\1/p' -e 's/.*already exists (id \(agt_[A-Za-z0-9_-]*\)).*/\1/p' | head -1
 }
+
+# fc_agent_init_upsert <fastclaw 命令> <名字> <key 变量名> [agents init 的其余参数...]
+#   建 Agent；同名已存在就带 --id <agt_…> 原地更新（和 lib-fc-key.sh 的 heybe_fc_agent_upsert 同一做法，#88）。
+#   先用 `fastclaw agents list` 查同名 Agent；没查到但 init 报 "already exists (id agt_…)"（例如 list 输出格式不同、
+#   数据目录是旧的）就用报错里的 id 再跑一次带 --id 的 init。不读缓存文件（PURGE 过的目录缓存可能是旧 id）。
+#   成功：stdout 打印 "created agt_…" 或 "updated agt_…"，返回 0；失败：stderr 只打印 init 输出里的 Error 行
+#   （去掉含 password 的行），返回 init 的退出码。key 只以变量名交给 fc_env_exec（子进程环境），不进 argv；
+#   init 输出可能含自动生成的管理员密码：只留在函数局部变量里，用完清空。
+fc_agent_init_upsert() {
+  local fc=$1 name=$2 keyvar=$3 id="" out rc=0 verb=created got
+  shift 3
+  id=$(FASTCLAW_API_KEY="" fc_resolve_agent_id 0 "$name" "$fc" 2>/dev/null || true)
+  if [ -n "$id" ]; then
+    verb=updated
+    out=$(fc_env_exec "$keyvar" "$fc" agents init "$name" --id "$id" "$@" 2>&1) || rc=$?
+  else
+    out=$(fc_env_exec "$keyvar" "$fc" agents init "$name" "$@" 2>&1) || rc=$?
+    got=$(fc_agent_id_from_init "$out")
+    if [ "$rc" != 0 ] && [ -n "$got" ]; then
+      id=$got; verb=updated; rc=0
+      out=$(fc_env_exec "$keyvar" "$fc" agents init "$name" --id "$id" "$@" 2>&1) || rc=$?
+    fi
+  fi
+  if [ "$rc" != 0 ]; then
+    printf '%s\n' "$out" | grep -i -m1 'error' | grep -v -i 'password' >&2 || true
+    out=""
+    return "$rc"
+  fi
+  got=$(fc_agent_id_from_init "$out")
+  # shellcheck disable=SC2034 # 故意清空：密码不留在变量里
+  out=""
+  id=${got:-$id}
+  [ -n "$id" ] || id=$(FASTCLAW_API_KEY="" fc_resolve_agent_id 0 "$name" "$fc" 2>/dev/null || true)
+  printf '%s %s\n' "$verb" "${id:-unknown}"
+}
+
+# camoufox-cli 浏览器技能开关（系统作用域，任一已有 Agent 都可作 <agent> 参数）。
+FC_CAMOUFOX_KEY=skills.entries.camoufox-cli.enabled
+
+# fc_camoufox_get <fastclaw 命令> <Agent 名或 agt_ id>：打印读回的值（true/false/空）
+fc_camoufox_get() {
+  local v
+  if type fc_env_exec >/dev/null 2>&1; then v=$(fc_env_exec "" "$1" agents config "$2" get "$FC_CAMOUFOX_KEY" 2>/dev/null) || v=""
+  else v=$("$1" agents config "$2" get "$FC_CAMOUFOX_KEY" 2>/dev/null) || v=""; fi
+  printf '%s\n' "$v" | tr -d '[:space:]'
+  echo
+}
+
+# fc_camoufox_off <fastclaw 命令> <Agent>：设成 false 再读回。读回是 false 返回 0；
+#   返回 1 = set 失败；返回 2 = 读回不是 false（stdout 打印读回值，空则打印“空”）。
+fc_camoufox_off() {
+  local v
+  if type fc_env_exec >/dev/null 2>&1; then fc_env_exec "" "$1" agents config "$2" set "$FC_CAMOUFOX_KEY" false >/dev/null 2>&1 || return 1
+  else "$1" agents config "$2" set "$FC_CAMOUFOX_KEY" false >/dev/null 2>&1 || return 1; fi
+  v=$(fc_camoufox_get "$1" "$2")
+  printf '%s\n' "${v:-空}"
+  [ "$v" = false ] || return 2
+}

@@ -48,7 +48,7 @@ def main(argv):
     ("组件版本",f"boxlite={g('boxlite_version')} / {g('fastclaw_version')}",f"lima_install={g('lima_install')}"),
     ("REST 前缀（探测命中，GET <前缀>/boxes）",f"{g('boxlite_rest_prefix')} → {g('boxlite_rest_list_http') or '—'}（/v1/me prefix={g('boxlite_me_prefix')}）","—"),
     ("FastClaw v1.4.0 创建请求体",f"{g('fastclaw_create_compat')}（HTTP {g('fastclaw_create_probe_http')}）","—"),
-    ("FastClaw 连接参数",f"URL={g('fastclaw_boxlite_url')} PREFIX={g('fastclaw_boxlite_prefix')} 垫片={g('boxlite_shim') or '未启用'}","—"),
+    ("FastClaw 连接参数",f"URL={g('fastclaw_boxlite_url')} PREFIX={g('fastclaw_boxlite_prefix')} 代理={g('boxlite_proxy') or ('旧垫片'+g('boxlite_shim') if g('boxlite_shim') else '未启用')} 出网={g('boxlite_proxy_outbound') or '未知'}","—"),
     ("Lima 镜像","—",g('lima_image')),
     ("验证1 /v1 流式输出",r(0,'boxlite',1),r(0,'docker',1)),
     ("验证2 ~/Documents 不可读",r(0,'boxlite',2),r(0,'docker',2)),

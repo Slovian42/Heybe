@@ -88,10 +88,21 @@ describe("rule 2 (2026-11-02): `fastclaw agents init` gets the key only via chil
 
   it("real spawn: key absent from the child's argv (as ps would see it), present in its env, absent from errors", async () => {
     // Fake `fastclaw`: records its argv (and /proc cmdline on Linux) and the env var.
+    // `agents config` (camoufox-cli check, exception 2) keeps its state in a file and records too.
     const bin = join(dir, "fastclaw");
     writeFileSync(
       bin,
       `#!/bin/sh
+if [ "$1 $2" = "agents config" ]; then
+  printf '%s\\n' "$@" >> "${dir}/config-argv.txt"
+  [ -r /proc/$$/cmdline ] && tr '\\0' '\\n' < /proc/$$/cmdline >> "${dir}/config-cmdline.txt"
+  printf '[%s]' "$${PROVIDER_KEY_ENV}" >> "${dir}/config-env.txt"
+  case "$4" in
+    set) printf '%s' "$6" > "${dir}/camoufox.txt"; echo "Set $5" ;;
+    get) if [ -f "${dir}/camoufox.txt" ]; then cat "${dir}/camoufox.txt"; echo; else echo null; fi ;;
+  esac
+  exit 0
+fi
 printf '%s\\n' "$0" "$@" > "${dir}/argv.txt"
 [ -r /proc/$$/cmdline ] && tr '\\0' '\\n' < /proc/$$/cmdline > "${dir}/cmdline.txt"
 printf '%s' "$${PROVIDER_KEY_ENV}" > "${dir}/env.txt"
@@ -109,6 +120,14 @@ echo "Agent ID: agt_spawned1"
     expect(argv).not.toContain(KEY);
     if (process.platform === "linux") expect(readFileSync(join(dir, "cmdline.txt"), "utf8")).not.toContain(KEY);
     expect(readFileSync(join(dir, "env.txt"), "utf8")).toBe(KEY);
+
+    // camoufox-cli check ran after init (get → set false → get) without the key anywhere.
+    const cfgArgv = readFileSync(join(dir, "config-argv.txt"), "utf8");
+    expect(cfgArgv).toContain("agents\nconfig\nagt_spawned1\nset\nskills.entries.camoufox-cli.enabled\nfalse\n");
+    expect(cfgArgv).not.toContain(KEY);
+    if (process.platform === "linux") expect(readFileSync(join(dir, "config-cmdline.txt"), "utf8")).not.toContain(KEY);
+    expect(readFileSync(join(dir, "config-env.txt"), "utf8")).toBe("[][][]");
+    expect(readFileSync(join(dir, "camoufox.txt"), "utf8")).toBe("false");
 
     // Failure path: error message carries neither key nor CLI output.
     // FAKE_FAIL is not on the child-env allowlist, so set it in a wrapper script.

@@ -87,6 +87,12 @@ verify 曾把 `agents init` 的名字 `poc` 直接当 `model` / `agent_id` / `x-
 - Cargo（桌面端编译）：见 `docs/t19-desktop-chat.md`，同样只作用于本次运行，不改 `~/.cargo/config.toml`。
 - 地址都可覆盖：`HEYBE_DOCKER_MIRROR=<前缀>`、`HEYBE_CARGO_MIRROR=<索引>`；`--mirror off` 关掉。实现 `scripts/lib-mirror.sh`，测试 `scripts/mirror-mock-test.sh`。
 
+## 1.4 桌面版用产品代码跑沙箱（#90）
+
+PoC 后台进程（serve 8100、代理 8101、fastclaw gateway 18953）都记在 `~/.local/opt/heybe-poc/*.pid`，旁边有 `*.pid.marker` 标记；`boxlite-poc.sh cleanup`（或只停进程的 `cleanup-procs`）只结束 pid 文件里、命令行核对得上的进程。留着它们会让 `heybe-desktop-dev.sh` 报 `E_RUNNING`：脚本会列出哪些是 PoC 进程并给出清理命令，加 `--stop-poc` 直接结束它们（别的进程一律不动）。测试 `scripts/poc/boxlite-poc-cleanup-mock-test.sh`。
+
+PoC 脚本验证的是 FastClaw + BoxLite 本身；桌面版走产品代码 `services/task-manager/src/sandbox.ts`：`scripts/dev/heybe-desktop-dev.sh --sandbox boxlite`（或设 `HEYBE_BOXLITE_BIN`），默认用本脚本 `install` 装的 `~/.local/opt/boxlite/bin/boxlite`。起来后另开终端跑 `scripts/dev/product-sandbox-check.sh` 做 8 项自检（只打印计数和 PASS/FAIL），见 `docs/t19-desktop-chat.md`。结束本地服务用 `pkill -f 'heybe-role=task-manager'`（argv 里是相对路径 `tsx src/main.ts`，按完整路径匹配不到）。
+
 ## 2. 密钥处理
 
 | 密钥 | 来源 | 存放 | 不会出现在 |
@@ -94,7 +100,10 @@ verify 曾把 `agents init` 的名字 `poc` 直接当 `model` / `agent_id` / `x-
 | DEEPSEEK_API_KEY | `${HEYBE_POC_ENV:-~/.heybe-poc.env}`（600 校验） | 只在脚本进程和 FastClaw gateway 环境中 | 终端、日志、报告 |
 | FastClaw apikey（每个后端一个） | 脚本运行 `fastclaw apikey create`，先用 `--help` 确认 `--name`（和 `--type`）参数存在，拿不到就 FAIL 并提示 | `~/.local/opt/heybe-poc/{boxlite,docker}/fastclaw-apikey`（600） | 终端、日志、报告 |
 | admin 初始密码 | `agents init` 首次创建 admin 时会打印生成的密码 | **不落盘**（脚本只在内存里读 init 输出后丢弃）；Heybe 不用控制台，需要时用 `fastclaw admin reset-password` 重置 | 报告 |
-| BOXLITE_API_KEY | 占位值 `local-poc`（本地 serve 未加 `--api-key` 为宽松模式） | 环境变量 | — |
+| BoxLite serve key（`BOXLITE_SERVE_API_KEY`） | 脚本随机生成 | `~/.local/opt/heybe-poc/boxlite/serve.key`（600）；只经环境变量交给 `boxlite serve` 和代理（代理里叫 `HEYBE_BOXLITE_UPSTREAM_KEY`），不进 argv | 终端、日志、报告、`ps` |
+| 代理 client key（FastClaw 的 `BOXLITE_API_KEY`） | 脚本随机生成，与 serve key 不同 | `~/.local/opt/heybe-poc/boxlite/proxy-client.key`（600）；只经环境变量交给代理（`HEYBE_BOXLITE_CLIENT_KEY`）和 gateway | 终端、日志、报告、`ps` |
+
+gateway（boxlite 后端）另带 `FASTCLAW_DEPLOY=hosted`（B1，见 [b1-file-tools.md](b1-file-tools.md)）；`HEYBE_POC_DEPLOY=self-hosted` 可复现修复前行为作对照，切换前先 `cleanup-fastclaw`。
 
 ## 3. 原手动步骤的自动化情况
 
@@ -103,7 +112,8 @@ verify 曾把 `agents init` 的名字 `poc` 直接当 `model` / `agent_id` / `x-
 | 给 Agent 配 DeepSeek | `fastclaw agents init poc --provider deepseek --model deepseek/deepseek-chat --api-key-env DEEPSEEK_API_KEY`，再 `agents doctor` | 已自动（CLI，直接写 FASTCLAW_HOME 的数据库，未用 `/api/*`）。模型 id 可用 `HEYBE_POC_MODEL` 覆盖 |
 | 创建 apikey | `fastclaw apikey create --name heybe-poc-<backend> --type user` | 已自动 |
 | docker 后端网络 none | `fastclaw agents config poc set sandbox.network none` | 已自动写入，但这是 agent 作用域配置；系统沙箱池（`userspace.go:147` 用的 `cfg.Network`）是否读取它**待核实**，以验证 3 结果为准。CLI 没有写系统作用域 `sandbox` 的入口（`settingKey` 把 `sandbox.*` 固定为 agent 作用域）。若验证 3 失败，只能走设置页（底层是 `/api/*`）或改 FastClaw，标为**需手动** |
-| BoxLite 出网白名单 | FastClaw v1.4.0 创建 box 时不传 `allow_net`，无任何配置入口 | **做不到**，需改 FastClaw 或加 shim |
+| BoxLite 出网 | FastClaw v1.4.0 创建 box 时不传 `allow_net`/`network`，BoxLite 默认全出网 | **已自动**：FastClaw 一律经本地代理（`boxlite-proxy.ts`，只听 127.0.0.1）连 serve，代理给每个建箱请求强制 `outbound=disabled`；serve 带随机 api-key（`BOXLITE_SERVE_API_KEY`，只经环境变量），不带 key → 401 |
+| camoufox-cli 技能 | `fastclaw agents config poc set skills.entries.camoufox-cli.enabled false`（系统作用域），再 `get` 读回 `false` | 已自动（`setup` 里，两个后端都做）；产品侧同样做（task-manager 启动和 `agents init` 后，读回不是 `false` 报 `E_FC_SKILL_DISABLE_FAILED`，见 `architecture.md` §3.10 第二个例外）；镜像里的二进制仍在，靠断网约束 |
 
 ## 4. 单步运行（排查用）
 
@@ -117,15 +127,16 @@ scripts/poc/boxlite-poc.sh fastclaw-docker  && scripts/poc/boxlite-poc.sh setup 
 scripts/poc/boxlite-poc.sh report
 ```
 
-三项验证判定：
+验证判定（boxlite 4 项，docker 前 3 项）：
 
 | # | 做法 | PASS 条件 |
 |---|---|---|
 | 1 流式输出 | `ws-probe` 直连 `…/attach` 做 WebSocket 握手；`verify` 让 Agent 执行 `echo HEYBE_EXEC_$((40+2)) && uname -a` | 握手 101 且 3/3 标记帧；回复含 `HEYBE_EXEC_42`、uname 为 Linux；日志无 attach 错误 |
 | 2 宿主隔离 | 在 `~/Documents/heybe-poc-secret.txt` 写随机标记，让 Agent `cat` | 回复中没有该标记 |
-| 3 出网拦截 | 让 Agent `curl https://example.com` | 不是 200/30x |
+| 3 出网拦截 | 让 Agent 跑 `scripts/poc/lib-net-verify.sh` 的 `NET_PROBE_CMD`：`curl https://example.com`、`curl http://host.boxlite.internal:8100/v1/config`（宿主 BoxLite serve）、`curl http://192.168.127.254:11434/`（宿主回环服务经 BoxLite 网关）、`getent hosts example.com`/`nslookup`（DNS） | 回复里 `CURL=yes`，且 `EXT`、`HOST8100`、`HOST11434`、`DNS` **都明确是 `NET_BLOCKED`**；有一项 `OPEN`/`RESOLVED` 或缺标记（模型没执行、镜像没 curl）都算 FAIL，不再只看“不是 200/30x” |
+| 4 api-key（仅 boxlite） | 宿主上不带 key 访问 `127.0.0.1:8100/v1/boxes` 和代理 `127.0.0.1:<代理端口>/v1/boxes` | 两个都是 401 |
 
-> 预期：BoxLite 的验证 3 在 v1.4.0 上很可能 FAIL（见第 3 节）。这本身就是要记录的结论。
+> 2026-11-02 Mac 实测：修复前 BoxLite 验证 3 FAIL（FastClaw 建箱不带网络设置，BoxLite 默认全出网，沙箱还能连宿主 `host.boxlite.internal`）。现在一律经代理强制 `outbound=disabled`，需在 Mac 上复验。判定逻辑干跑测试：`scripts/poc/net-verify-mock-test.sh`。docker 组验证 3 预期仍 FAIL（`sandbox.network` 是 agent 作用域，系统池不读；Lima/docker 只作对照）。
 
 ## 5. 清理（手动执行，`all` 不会自动做）
 
@@ -135,6 +146,8 @@ PURGE=1 scripts/poc/boxlite-poc.sh cleanup    # 另外删除 ~/.local/opt/{boxli
 brew uninstall lima docker                    # 可选
 rm ~/.heybe-poc.env                           # 用完删除密钥文件
 ```
+
+不带 `PURGE=1` 的 cleanup 会保留 FastClaw 数据目录和 Agent `poc`。之后再跑 `setup`，脚本先用 `fastclaw agents list` 查出它的 `agt_…` id，带 `--id` 原地更新（不新建、不重新生成管理员密码）；查不到但 `init` 报 `already exists (id agt_…)` 时，用报错里的 id 再带 `--id` 跑一次。更新后重新关闭 camoufox-cli 并读回 `false`。干跑测试：`scripts/poc/boxlite-setup-mock-test.sh`。
 
 ## 6. 结果回填表
 
@@ -148,7 +161,7 @@ rm ~/.heybe-poc.env                           # 用完删除密钥文件
 | 组件版本 | | |
 | REST `/v1/default/boxes` | | — |
 | WS 握手 / 标记帧 | | — |
-| 验证1 / 2 / 3 | | |
+| 验证1 / 2 / 3 / 4 | | |
 | 冷启动 / 热启动 ms | | |
 | 首轮对话 ms | | |
 | 安装 / 数据体积 | | |

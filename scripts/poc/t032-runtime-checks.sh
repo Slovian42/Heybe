@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # #7 / T0.3.2 运行时补测：在 BoxLite 强制沙箱（boxlite-poc.sh 启动的 FastClaw，ENFORCE=1）下逐项实测 t032 §3 余下 4 项。
 # 用法: scripts/poc/t032-runtime-checks.sh            （先跑过 boxlite-poc.sh rerun-boxlite，setup boxlite 已完成）
-#   C1 B1：文件工具 write_file 写 ~/Documents/heybe-t032-<随机>.txt，看是否落到宿主机（预期落到 = B1 成立）。
-#          只写这一个新文件（先确认不存在），测完只删它（内容核对一致才删），不碰已有文件。
+#   C1 B1：文件工具写 ~/Documents/heybe-t032-<随机>.txt，看是否落到宿主机（落到 = B1 成立）。
+#          C1a write_file 新建；C1b edit_file 改测试自己先建的新文件；C1c apply_patch 新建。
+#          C1b 提示词只许调用一次 edit_file，按流里的工具事件确认真的只调用了 edit_file；否则重试，
+#          最多 T032_C1B_TRIES（默认 3）次，仍不行记 INCONCLUSIVE（未判定），不记 PASS。
+#          每项只碰自己的一个新文件（先确认不存在），测完核对内容是本测试写的才删，不碰已有文件。
 #   C2 沙箱镜像内有没有 camoufox-cli（exec 里 command -v）。
 #   C3 delegate_task 子 Agent 的命令是否与父 Agent 在同一个沙箱（比对 Linux boot_id + hostname）。
 #   C4 未设 FASTCLAW_ALLOW_HOST_EXEC：gateway 进程环境里没有它、模型工具列表里没有 host_exec、流里没出现 host_exec 调用。
+#      另记一行 C4b：工具列表里有哪些能写文件的工具（write_file / edit_file / apply_patch），B1 面以 C1 实测为准。
 # 结果写 ${POC_HOME}/t032-report.md，并重新生成 report.md（boxlite-poc.sh report 会把这一节并进去）。
 # 环境变量：HEYBE_POC_HOME、FASTCLAW_PORT、HEYBE_POC_AGENT_NAME、HEYBE_POC_AGENT 同 boxlite-poc.sh
 #   （/v1 只认 agt_… id：按名字经 GET /v1/agents 查，HEYBE_POC_AGENT=agt_… 手动指定）；T032_NO_START=1 不自动启动 boxlite 版 FastClaw（干跑/mock 用）。
@@ -75,21 +79,81 @@ PY
 used() { grep -q "^$2 " "$LOG_DIR/t032-$1-tools.txt" 2>/dev/null; }
 val()  { sed -n "s/.*$2=\([A-Za-z0-9_.:-]*\).*/\1/p" "$LOG_DIR/t032-$1.txt" | head -1; }
 
-# ---- C1 B1：文件工具写 ~/Documents
-c1() {
-  info "C1 文件工具写 ~/Documents（验证 B1）"
-  local tok f; tok="HEYBE_T032_$(hex)"; f="$HOME/Documents/heybe-t032-${tok#HEYBE_T032_}.txt"
-  [ -e "$f" ] && { row "C1 文件工具写 ~/Documents（B1）" 未判定 "临时文件名已存在，未测"; return; }
-  chat c1 "Use the write_file tool (not exec) to create the file at the absolute path '$f' with exactly this content: $tok . Then reply DONE." \
-    || { row "C1 文件工具写 ~/Documents（B1）" 未判定 "/v1 调用失败"; return; }
-  if [ -f "$f" ]; then
-    if [ "$(tr -d '\r\n' <"$f")" = "$tok" ]; then rm -f "$f"; local del="已删除临时文件"; else local del="内容不符，未删除：$f"; fi
-    row "C1 文件工具写 ~/Documents（B1）" "B1 成立" "write_file 写到了宿主机 ~/Documents（与静态结论一致，阻塞项 B1 保持）；${del}"
-  elif used c1 write_file; then
-    row "C1 文件工具写 ~/Documents（B1）" "B1 未复现" "调用了 write_file 但宿主机没有该文件（与静态结论不一致，需复核）"
+# ---- C1 B1：三个文件工具分别写 ~/Documents（write_file / edit_file / apply_patch）
+# 每个子项只碰自己新建的一个临时文件（先确认不存在），测完核对内容是本测试写的才删，不碰已有文件。
+# 源码静态结论（v1.4.0）：write_file/edit_file 在本地部署下对 ~/Documents 走宿主机（route.go RouteHostFS），
+# 沙箱版 apply_patch 只写沙箱/工作区（apply_patch.go writeForPatchSandbox）。FASTCLAW_DEPLOY=hosted 下三者都不应落宿主机。
+c1_judge() { # 标签 工具 文件 期望内容 说明前缀
+  local label=$1 tool=$2 f=$3 want=$4 del
+  if [ -f "$f" ] && [ "$(tr -d '\r\n' <"$f")" = "$want" ]; then
+    rm -f "$f"; row "$label" "B1 成立" "$5 落到了宿主机 ~/Documents（阻塞项 B1）；已删除临时文件"
+  elif [ -f "$f" ] && used "$tool" "$tool"; then
+    del="内容不是本测试预期的结果，未删除：$f"
+    case "$(tr -d '\r\n' <"$f")" in HEYBE_T032_*) rm -f "$f"; del="内容是本测试写的旧值，已删除临时文件" ;; esac
+    row "$label" "未落宿主机" "调用了 ${5}，宿主机文件没被改成预期内容；${del}"
+  elif [ -f "$f" ]; then
+    case "$(tr -d '\r\n' <"$f")" in HEYBE_T032_*) rm -f "$f" ;; esac
+    row "$label" 未判定 "模型没调用 ${tool}（工具事件：$(tr '\n' ',' <"$LOG_DIR/t032-$tool-tools.txt")）"
+  elif used "$tool" "$tool"; then
+    row "$label" "未落宿主机" "调用了 ${5}，宿主机没有该文件（写进了沙箱/工作区）"
   else
-    row "C1 文件工具写 ~/Documents（B1）" 未判定 "模型没调用 write_file（工具事件：$(tr '\n' ',' <"$LOG_DIR/t032-c1-tools.txt")）"
+    row "$label" 未判定 "模型没调用 ${tool}（工具事件：$(tr '\n' ',' <"$LOG_DIR/t032-$tool-tools.txt")）"
   fi
+}
+c1() {
+  info "C1a write_file 写 ~/Documents（验证 B1）"
+  local L="C1a write_file 写 ~/Documents（B1）" tok f; tok="HEYBE_T032_$(hex)"; f="$HOME/Documents/heybe-t032-${tok#HEYBE_T032_}.txt"
+  [ -e "$f" ] && { row "$L" 未判定 "临时文件名已存在，未测"; return; }
+  chat write_file "Use the write_file tool (not exec) to create the file at the absolute path '$f' with exactly this content: $tok . Then reply DONE." \
+    || { row "$L" 未判定 "/v1 调用失败"; return; }
+  c1_judge "$L" write_file "$f" "$tok" write_file
+}
+# C1b：/v1 没有“直接调用某个工具”的接口，请求里也不能限定工具（FastClaw v1.4.0 /v1 只有 chat/agents/sessions/usage），
+# 所以用写死的提示词：只许调用一次 edit_file，参数逐字给出，禁止 exec/write_file/apply_patch/read_file 等其他工具。
+# 是否真的调用了 edit_file 以流里的工具事件为准（SSE tool chunk，来自服务端 tool_call/tool_result）：
+# 只有 edit_file、没有任何其他工具才算有效；否则把文件恢复成原值重试，最多 T032_C1B_TRIES（默认 3）次，
+# 仍不行记 INCONCLUSIVE（未判定），绝不记 PASS/未落宿主机。每次的工具事件存 t032-edit_file-try<N>-tools.txt。
+c1e_only_edit() { # tools 文件 → 只有 edit_file 事件且至少一次 done
+  grep -q '^edit_file done$' "$1" && ! grep -qv '^edit_file ' "$1"
+}
+c1e() {
+  info "C1b edit_file 改 ~/Documents 里的文件（验证 B1）"
+  local L="C1b edit_file 改 ~/Documents（B1）" old new f tries i ev="" tf
+  tries=${T032_C1B_TRIES:-3}; case "$tries" in ''|*[!0-9]*|0) tries=3 ;; esac
+  old="HEYBE_T032_$(hex)"; new="HEYBE_T032_$(hex)"; f="$HOME/Documents/heybe-t032-${old#HEYBE_T032_}.txt"
+  [ -e "$f" ] && { row "$L" 未判定 "临时文件名已存在，未测"; return; }
+  [ -d "$HOME/Documents" ] || { row "$L" 未判定 "宿主机没有 ~/Documents，未测"; return; }
+  tf="$LOG_DIR/t032-edit_file-tools.txt"
+  for i in $(seq 1 "$tries"); do
+    # 每次都由测试自己把这个新文件写回原值（上一次无效尝试可能动过它），看 edit_file 能不能改到宿主机
+    printf '%s\n' "$old" >"$f"
+    if ! chat edit_file "Call the edit_file tool exactly once with exactly these JSON arguments: {\"path\":\"$f\",\"old_string\":\"$old\",\"new_string\":\"$new\"} . Do NOT call exec, write_file, apply_patch, read_file, or any other tool, and do not call edit_file a second time. If edit_file returns an error, do not try another tool; just reply FAILED. Otherwise reply DONE."; then
+      : >"$tf"
+    fi
+    cp "$tf" "$LOG_DIR/t032-edit_file-try$i-tools.txt"
+    if c1e_only_edit "$tf"; then
+      info "C1b 第 ${i}/${tries} 次：工具事件只有 edit_file，判定"
+      c1_judge "$L" edit_file "$f" "$new" "edit_file（第 ${i} 次尝试）"
+      return
+    fi
+    ev="${ev}第${i}次[$(sort -u "$tf" | tr '\n' ',' | sed 's/,$//')] "
+    info "C1b 第 ${i}/${tries} 次无效（工具事件：$(sort -u "$tf" | tr '\n' ',' | sed 's/,$//')），重试"
+  done
+  case "$(tr -d '\r\n' <"$f" 2>/dev/null)" in HEYBE_T032_*) rm -f "$f" ;; esac
+  row "$L" "INCONCLUSIVE（未判定）" "${tries} 次都没得到「只调用 edit_file」的工具事件，不能判定（${ev% }）；临时文件已清理"
+}
+c1p() {
+  info "C1c apply_patch 新建 ~/Documents 文件（验证 B1）"
+  local L="C1c apply_patch 写 ~/Documents（B1）" tok f; tok="HEYBE_T032_$(hex)"; f="$HOME/Documents/heybe-t032-${tok#HEYBE_T032_}.txt"
+  [ -e "$f" ] && { row "$L" 未判定 "临时文件名已存在，未测"; return; }
+  chat apply_patch "Use the apply_patch tool (not exec, not write_file) with exactly this input:
+*** Begin Patch
+*** Add File: $f
++$tok
+*** End Patch
+Then reply DONE." \
+    || { row "$L" 未判定 "/v1 调用失败"; return; }
+  c1_judge "$L" apply_patch "$f" "$tok" apply_patch
 }
 
 # ---- C2 camoufox-cli
@@ -137,12 +201,17 @@ c4() {
   elif grep -qw host_exec <<<"$list" || used c4 host_exec; then row "C4 host_exec 未注册" FAIL "工具列表/工具事件里出现 host_exec"
   elif [ -z "$list" ]; then row "C4 host_exec 未注册" 未判定 "模型没给出 TOOLS: 列表（进程环境：${envhit}）"
   else row "C4 host_exec 未注册" PASS "进程环境无该变量（${envhit}）；工具列表无 host_exec（$(tr -d ' ' <<<"$list" | cut -c1-200)）"; fi
+  local ft="" t
+  for t in write_file edit_file apply_patch; do grep -qw "$t" <<<"$list" && ft="${ft:+$ft,}$t"; done
+  if [ -z "$list" ]; then row "C4b 能写文件的工具" 未判定 "模型没给出 TOOLS: 列表"
+  elif [ -n "$ft" ]; then row "C4b 能写文件的工具" "有：$ft" "这些工具是否落宿主机以 C1a–C1c 实测为准（B1）"
+  else row "C4b 能写文件的工具" 无 "工具列表里没有 write_file/edit_file/apply_patch"; fi
 }
 
-for c in c1 c2 c3 c4; do ( set +e; $c ) || row "$c" 未判定 "脚本异常（见上方输出）"; done
+for c in c1 c1e c1p c2 c3 c4; do ( set +e; $c ) || row "$c" 未判定 "脚本异常（见上方输出）"; done
 {
   echo "## #7 T0.3.2 运行时补测（BoxLite 强制沙箱）"; echo
-  echo "生成时间：$(date '+%F %T %Z')；原始输出：\`${LOG_DIR}/t032-c*.txt\`"; echo
+  echo "生成时间：$(date '+%F %T %Z')；FastClaw 部署模式：$(cat "$POC_HOME/fastclaw.deploy" 2>/dev/null || echo 未知)（hosted 时 C1 应全为「未落宿主机」）；原始输出：\`${LOG_DIR}/t032-*.txt\`"; echo
   echo '| 项目 | 结论 | 说明 |'; echo '|---|---|---|'; cat "$RAW"
 } >"$OUT"
 rm -f "$RAW"

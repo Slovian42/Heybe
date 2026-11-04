@@ -16,9 +16,9 @@
 | # | 工具 / 入口 | 在不在隔离内 | 证据（v1.4.0） | Heybe 处理 |
 |---|---|---|---|---|
 | 1 | `exec` / `bash` 类 | **在**（强制模式） | `SetExecutor` 换成 `registerSandboxedExec`（[`registry.go:955–961`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/registry.go#L955-L961)）；沙箱缺失时只给提示、不回退宿主机（[`exec.go:495–530`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/exec.go#L495-L530)） | 待 #6 实测 |
-| 2 | 文件工具 `read_file`/`write_file`/`list_dir`/`apply_patch` | **部分**：默认路径进沙箱；**显式宿主机路径**（`~/Documents`、`~/Downloads`、`~/Desktop`、`~/projects`、`~/code`、`~/work`、`/Users/<u>/…`、`/home/<u>/…`）走 `RouteHostFS` 直接读写宿主机 | [`route.go:96–110`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/route.go#L96-L110) “local with sandbox → sandbox-first … Host disk is reachable only via explicit host-scope paths”；`isExplicitHostScope` 同文件 | **阻塞项 B1** |
+| 2 | 文件工具 `read_file`/`write_file`/`list_dir`/`apply_patch` | **部分**：默认路径进沙箱；**显式宿主机路径**（`~/Documents`、`~/Downloads`、`~/Desktop`、`~/projects`、`~/code`、`~/work`、`/Users/<u>/…`、`/home/<u>/…`）走 `RouteHostFS` 直接读写宿主机（B1；Heybe 开沙箱时设 `FASTCLAW_DEPLOY=hosted` 后全部进沙箱，见 [b1-file-tools.md](b1-file-tools.md)） | [`route.go:96–110`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/route.go#L96-L110) “local with sandbox → sandbox-first … Host disk is reachable only via explicit host-scope paths”；`isExplicitHostScope` 同文件 | **阻塞项 B1** |
 | 3 | 工作区产物（相对路径如 `report.md`）、身份文件（`MEMORY.md` 等） | **不在沙箱内，但在 FastClaw 自己的存储里**（`RouteWorkspaceStore`/`RouteSystemStore`，优先于沙箱判断） | [`route.go:72–83`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/route.go#L72-L83) | 可接受（这是产物取回的通道，见 #8）；`MEMORY.md` 跨会话共享见 T0.4.1 §2 |
-| 4 | 浏览器技能（`camoufox-cli`） | **跟随 exec**：没有独立浏览器工具，经 `exec` 调用 camoufox 守护进程（[`exec.go:84`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/exec.go#L84)、[`delegate.go:29–52`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/delegate.go#L29-L52)）。强制模式下在沙箱内；镜像里必须预装 | 第 1 行；待 #6 实测沙箱镜像是否带 camoufox |
+| 4 | 浏览器技能（`camoufox-cli`） | **跟随 exec**：没有独立浏览器工具，经 `exec` 调用 camoufox 守护进程（[`exec.go:84`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/exec.go#L84)、[`delegate.go:29–52`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/delegate.go#L29-L52)）。强制模式下在沙箱内；镜像里必须预装 | 第 1 行。**v1 关闭该技能**：`fastclaw agents config <agent> set skills.entries.camoufox-cli.enabled false`（系统作用域；技能加载器把 `enabled:false` 当禁用，`skills.go:209–213`，mock LLM 核对过系统提示的技能目录里不再有它）。产品侧已实现（`architecture.md` §3.10 第二个 CLI 例外，Yang 2026-11-02 批准）：task-manager 每次启动、每次 `agents init` 后都 `get` → 需要时 `set false` → 读回 `false`，不对就报 `E_FC_SKILL_DISABLE_FAILED` 并停下（`services/task-manager/src/fastclaw-skills.ts`）；PoC 同样自动做并读回检查（`boxlite-poc.sh setup`）。镜像里二进制仍在、系统提示固定段仍提到它，真正的约束是沙箱断网（代理强制 `outbound=disabled`） |
 | 5 | `web_fetch` | **不在**：在 gateway 进程里发请求。有 SSRF 防护（拒私网、回环、链路本地、CGNAT，拨号时检查，限重定向，[`web_fetch.go:29–104`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/web_fetch.go#L29-L104)），但出网不受沙箱网络策略约束 | 同左 | 可接受为“只读出网”，**风险**：能把会话内容带到任意公网 URL（GET 参数外传）。**注意**：上述防护只在内置抓取器上；一旦 FastClaw 配置了 `tools.web_fetch` 提供方链，`direct` 提供方用 `http.DefaultClient`，**没有任何地址拦截**（2026-10-30 实测能读 127.0.0.1），所以 Heybe 不得配置该链。D3/D12（Yang 10-30 拍板，经 Grok Bot 转达）继续用它做网页抓取，风险评估与缓解见 `docs/design/t051-web-report.md` §7–8 |
 | 6 | `web_search` | **不在**：gateway 进程调外部搜索提供方（exa/brave/searxng，[`web_search.go:12–36`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/web_search.go#L12-L36)） | 同左 | v1 不配置搜索提供方（D3） |
 | 7 | MCP（stdio） | **不在**：`exec.Command` 在**宿主机**起子进程，`Env = os.Environ()` 全量继承，再追加配置里的 env，`$VAR` 形式还会从宿主机环境展开（[`mcp/stdio.go:37–47`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/mcp/stdio.go#L37-L47)）；对比 exec 工具会走 `scrubSensitiveEnv`（[`env_scrub.go:89–111`](https://github.com/fastclaw-ai/fastclaw/blob/v1.4.0/internal/agent/tools/env_scrub.go#L89-L111)），MCP 没走 | 同左 | **阻塞项 B2** |
@@ -33,7 +33,7 @@
 
 | 编号 | 内容 | 解除条件 |
 |---|---|---|
-| **B1** | 强制沙箱下，文件工具对“显式宿主机路径”仍直通宿主机读写（`~/Documents` 等） | 上游无开关。选项：① gateway 以独立低权限用户运行、HOME 指向空目录，让这些路径不存在/无权限；② 在 Mac 上用 BoxLite/Lima 把 **整个 gateway** 放进虚机（#6 方案）；③ 上游提案加开关。#6 实测前**不得**对外宣称“文件已隔离” |
+| **B1** | 强制沙箱下，文件工具对“显式宿主机路径”仍直通宿主机读写（`~/Documents` 等） | **已修（待 Mac 复验）**：上游其实有开关——`FASTCLAW_DEPLOY=hosted` 时 `route.go` 规则 1 让所有文件工具进沙箱、无沙箱则拒绝。产品开沙箱时给 gateway 传这个环境变量（`sandbox.ts sandboxGatewayEnv`），不需新例外。详见 [b1-file-tools.md](b1-file-tools.md)。Mac 上 t032 C1a–C1c 全为“未落宿主机”之前**不得**对外宣称“文件已隔离” |
 | **B2** | MCP / 插件子进程在宿主机运行且继承 gateway 全部环境变量 | v1 不启用 stdio MCP 与插件；Heybe 启 gateway 时只传白名单环境变量（安全跟进 PR）；以后需要 MCP 时由 Heybe 受控 MCP 提供 |
 | **B3** | 渠道在宿主机进程内、绕过 Heybe | v1 不开；v1.1 Telegram 走 Heybe 自建桥（方案 C） |
 
@@ -44,7 +44,9 @@
 第 1 项由 `boxlite-poc.sh verify boxlite` 验证2 覆盖；其余 4 项由 `scripts/poc/t032-runtime-checks.sh` 在 BoxLite 强制沙箱下实测（先跑 `boxlite-poc.sh rerun-boxlite`），结果写 `~/.local/opt/heybe-poc/t032-report.md` 并并入 `report.md`。干跑测试：`scripts/poc/t032-mock-test.sh`。
 
 - [ ] 强制模式 + BoxLite：`exec` 写的文件不出现在宿主机、`exec` 不能访问宿主机 `~`
-- [ ] 文件工具写 `~/Documents/heybe-probe.txt`：预期**落到宿主机**（验证 B1）
-- [ ] 沙箱镜像内有无 `camoufox-cli`
+- [ ] 文件工具写 `~/Documents/heybe-t032-<随机>.txt`（验证 B1），分三项：C1a `write_file` 新建、C1b `edit_file` 改脚本先建好的新文件、C1c `apply_patch` 新建。源码静态结论（v1.4.0）：前两个本地部署下对 `~/Documents`、`/Users/…` 走宿主机（`route.go` `RouteHostFS`，B1 成立）；沙箱版 `apply_patch` 只写沙箱/工作区（`apply_patch.go` `writeForPatchSandbox`），预期“未落宿主机”。开 `FASTCLAW_DEPLOY=hosted` 后三项都应是“未落宿主机”（见 `b1-file-tools.md`）
+  - C1b 怎么保证真的调用了 `edit_file`：FastClaw v1.4.0 的 `/v1` 只有 chat/agents/sessions/usage，没有直接调某个工具的接口，请求里也不能限定可用工具，所以没有确定性的办法。脚本用写死的提示词：逐字给出 `edit_file` 的 JSON 参数（`path`/`old_string`/`new_string`），只许调用一次，禁止 `exec`/`write_file`/`apply_patch`/`read_file` 等其他工具，出错就回 FAILED。是否生效以流里的工具事件为准（SSE `tool` 块，来自服务端 tool_call/tool_result）：只有 `edit_file` 且有一次 `done` 才判定；否则把文件写回原值重试，最多 `T032_C1B_TRIES`（默认 3）次，仍不行记 `INCONCLUSIVE（未判定）`，不会记 PASS 或“未落宿主机”。每次的工具事件留在 `logs/t032-edit_file-try<N>-tools.txt`。
+- [ ] 沙箱镜像内有无 `camoufox-cli`（v1 已关该技能，见第 4 行；二进制在不在只影响断网失效时的风险）
+  - 结论（2026-11-02 Mac 复验 C2=有）：可接受。① 技能已在系统作用域关闭（`skills.entries.camoufox-cli.enabled=false`，产品和 PoC 都读回校验，读回不是 false 就拒绝启动），加载器不再把它提供给模型；② 沙箱没有出网：代理对每个建箱请求强制 `outbound=disabled`，验证 3 外网和宿主端口都是 NET_BLOCKED，二进制就算被 `exec` 直接调用也打不开任何网站，也碰不到宿主机；③ 部署模式 hosted，文件工具不落宿主机。剩余风险：只有网络策略被改动时它才有用。后续：自建不含它的沙箱镜像（不阻塞 v1）。
 - [ ] `delegate_task` 子 Agent 的命令在父沙箱内
-- [ ] 不设 `FASTCLAW_ALLOW_HOST_EXEC` 时工具列表里没有 `host_exec`
+- [ ] 不设 `FASTCLAW_ALLOW_HOST_EXEC` 时工具列表里没有 `host_exec`；另记 C4b：工具列表里有哪些能写文件的工具（`write_file`/`edit_file`/`apply_patch`）

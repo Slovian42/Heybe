@@ -1,13 +1,15 @@
 # shellcheck shell=bash
 # Heybe：启动 FastClaw gateway / CLI 时只传必需环境变量（白名单优先），并把数据目录按“含明文密钥”保护。
-# 兼容 macOS bash 3.2（无关联数组）。与 services/task-manager/src/child-env.ts 同一套规则。
+# 兼容 macOS bash 3.2（无关联数组）。与 services/task-manager/src/child-env.ts 同一套规则，
+# 唯一差别：这里白名单多 FASTCLAW_SANDBOX_*、DOCKER_HOST 和 FASTCLAW_DEPLOY（只给 scripts/poc 的 BoxLite/Lima+docker 对照用；
+# 产品侧不继承这些名字，沙箱设置只由 src/sandbox.ts 的 sandboxGatewayEnv 显式给出）。
 #
 # 原因：FastClaw v1.4.0 把自己的全部环境变量交给 stdio MCP / 插件子进程（internal/mcp/stdio.go），
 # 模型 key 已在 agents init 时写进数据库（internal/agentcli/agentcli.go:550–558），gateway 运行时不需要它。
 
 HEYBE_FC_ENV_ALLOW="PATH HOME USER LOGNAME SHELL LANG LC_ALL LC_CTYPE TMPDIR TZ TERM \
 FASTCLAW_HOME FASTCLAW_PORT FASTCLAW_BIND FASTCLAW_SANDBOX_ENABLED FASTCLAW_SANDBOX_ENFORCE \
-FASTCLAW_SANDBOX_BACKEND FASTCLAW_SANDBOX_BOXLITE_URL FASTCLAW_SANDBOX_BOXLITE_PREFIX DOCKER_HOST"
+FASTCLAW_SANDBOX_BACKEND FASTCLAW_SANDBOX_BOXLITE_URL FASTCLAW_SANDBOX_BOXLITE_PREFIX DOCKER_HOST FASTCLAW_DEPLOY"
 
 fc_is_secret_name() { # name → 0 表示像密钥
   case "$1" in
@@ -85,6 +87,17 @@ fc_env_bg() {
   local pidfile="$1"
   shift
   ( FC_ENV_EXEC=1 fc_env_exec "$@" & echo $! >"${pidfile}" )
+}
+
+# curl_k <key> curl参数…：Authorization: Bearer 头经 stdin 配置（curl -K -）交给 curl，key 不进任何 argv。
+# key 为空时不带头（BoxLite serve 的公开路由 /v1/config、或者有意测 401）。
+curl_k() {
+  local k="$1"
+  shift
+  if [ -z "${k}" ]; then curl "$@"; return; fi
+  curl -K - "$@" <<EOF
+header = "Authorization: Bearer ${k}"
+EOF
 }
 
 # fc_lock_home <dir>：目录 700、文件 600（数据库里有明文模型 key）
