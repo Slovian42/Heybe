@@ -93,6 +93,27 @@ struct Running {
     _stdin: Option<ChildStdin>,
 }
 
+/// Where the service keeps tasks and chat turns (#19 part 2: closing the window or quitting must
+/// not lose them). `HEYBE_TASK_DB` from the environment wins; otherwise
+/// `~/Library/Application Support/Heybe/heybe-tasks.db`, directory created 0700.
+pub fn task_db_path(env_value: Option<&str>, home: Option<&str>) -> Option<std::path::PathBuf> {
+    if let Some(v) = env_value.map(str::trim).filter(|v| !v.is_empty()) {
+        return Some(std::path::PathBuf::from(v));
+    }
+    let home = home.map(str::trim).filter(|h| h.starts_with('/'))?;
+    Some(std::path::Path::new(home).join("Library/Application Support/Heybe/heybe-tasks.db"))
+}
+
+fn ensure_private_dir(db: &std::path::Path) -> bool {
+    use std::os::unix::fs::DirBuilderExt;
+    match db.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => {
+            std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir).is_ok()
+        }
+        _ => true,
+    }
+}
+
 fn random_token() -> String {
     let mut buf = [0u8; 32];
     std::fs::File::open("/dev/urandom")
@@ -238,7 +259,16 @@ impl Supervisor {
     }
 
     fn spawn_once(&self, cmd: &str) -> Result<(Running, u16), StartError> {
-        let mut child = Command::new("/bin/sh")
+        let mut command = Command::new("/bin/sh");
+        let db = task_db_path(std::env::var("HEYBE_TASK_DB").ok().as_deref(), std::env::var("HOME").ok().as_deref());
+        match db {
+            Some(path) if ensure_private_dir(&path) => {
+                command.env("HEYBE_TASK_DB", path);
+            }
+            // No usable location: the service falls back to an in-memory DB (lost on quit).
+            _ => eprintln!("heybe: no writable HEYBE_TASK_DB location; chat history is kept in memory only"),
+        }
+        let mut child = command
             .arg("-c")
             .arg(cmd)
             .env("HEYBE_SERVICE_TOKEN", self.token.as_str())
@@ -452,6 +482,28 @@ mod tests {
         let total: Duration = (0..3).map(backoff).sum();
         assert!(backoff(10) <= Duration::from_secs(8));
         assert!(total < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn task_db_location() {
+        assert_eq!(
+            task_db_path(None, Some("/Users/a")).unwrap(),
+            std::path::PathBuf::from("/Users/a/Library/Application Support/Heybe/heybe-tasks.db")
+        );
+        assert_eq!(task_db_path(Some(" /tmp/x.db "), Some("/Users/a")).unwrap(), std::path::PathBuf::from("/tmp/x.db"));
+        assert_eq!(task_db_path(Some(""), None), None);
+        assert_eq!(task_db_path(None, Some("relative")), None);
+    }
+
+    #[test]
+    fn private_dir_is_0700() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::env::temp_dir().join(format!("heybe-db-test-{}", std::process::id()));
+        let db = base.join("a/b/heybe-tasks.db");
+        assert!(ensure_private_dir(&db));
+        let mode = std::fs::metadata(db.parent().unwrap()).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700);
+        let _ = std::fs::remove_dir_all(base);
     }
 
     #[test]
