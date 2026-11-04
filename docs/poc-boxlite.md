@@ -89,6 +89,8 @@ verify 曾把 `agents init` 的名字 `poc` 直接当 `model` / `agent_id` / `x-
 
 ## 1.4 桌面版用产品代码跑沙箱（#90）
 
+PoC 后台进程（serve 8100、代理 8101、fastclaw gateway 18953）都记在 `~/.local/opt/heybe-poc/*.pid`，旁边有 `*.pid.marker` 标记；`boxlite-poc.sh cleanup`（或只停进程的 `cleanup-procs`）只结束 pid 文件里、命令行核对得上的进程。留着它们会让 `heybe-desktop-dev.sh` 报 `E_RUNNING`：脚本会列出哪些是 PoC 进程并给出清理命令，加 `--stop-poc` 直接结束它们（别的进程一律不动）。测试 `scripts/poc/boxlite-poc-cleanup-mock-test.sh`。
+
 PoC 脚本验证的是 FastClaw + BoxLite 本身；桌面版走产品代码 `services/task-manager/src/sandbox.ts`：`scripts/dev/heybe-desktop-dev.sh --sandbox boxlite`（或设 `HEYBE_BOXLITE_BIN`），默认用本脚本 `install` 装的 `~/.local/opt/boxlite/bin/boxlite`。起来后另开终端跑 `scripts/dev/product-sandbox-check.sh` 做 8 项自检（只打印计数和 PASS/FAIL），见 `docs/t19-desktop-chat.md`。结束本地服务用 `pkill -f 'heybe-role=task-manager'`（argv 里是相对路径 `tsx src/main.ts`，按完整路径匹配不到）。
 
 ## 2. 密钥处理

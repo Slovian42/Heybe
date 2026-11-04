@@ -17,6 +17,8 @@
 #   --sandbox boxlite  本地服务按产品代码路径（services/task-manager/src/sandbox.ts）先起 boxlite serve + 强制禁出网的代理，
 #                  再让 gateway 在 BoxLite 沙箱里跑，部署模式 hosted。设了 HEYBE_BOXLITE_BIN 时自动启用；
 #                  默认二进制 ~/.local/opt/boxlite/bin/boxlite（scripts/poc/boxlite-poc.sh install 装的）。
+#   --stop-poc     发现 scripts/poc/boxlite-poc.sh 留下的进程（serve / 代理 / fastclaw gateway）时先结束它们再继续；
+#                  只结束 PoC pid 文件里、命令行核对得上的进程（scripts/poc/lib-poc-procs.sh），别的进程一律不动。
 #   --sandbox off  不用沙箱（即使设了 HEYBE_BOXLITE_BIN）。启动时把沙箱模式、部署模式写到 stderr。
 # 状态目录：${T021_HOME}/service-state（task-manager.pid、service-state.json 只有 pid/端口/模式、sandbox.log 代理日志），
 #   scripts/dev/product-sandbox-check.sh 读它做自检。精确结束本地服务：pkill -f 'heybe-role=task-manager'
@@ -31,13 +33,16 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 . "$REPO_ROOT/scripts/poc/lib-fc-env.sh"
 # shellcheck source=../poc/lib-fc-agent.sh
 . "$REPO_ROOT/scripts/poc/lib-fc-agent.sh"
+# shellcheck source=../poc/lib-poc-procs.sh
+. "$REPO_ROOT/scripts/poc/lib-poc-procs.sh"
 # shellcheck source=../poc/lib-fc-key.sh
 . "$REPO_ROOT/scripts/poc/lib-fc-key.sh"
-CMD="" YES=0 MIRROR="${HEYBE_MIRROR:-}" SANDBOX=""
+CMD="" YES=0 STOP_POC=0 MIRROR="${HEYBE_MIRROR:-}" SANDBOX=""
 while [ $# -gt 0 ]; do
   case "$1" in
     check) CMD=check ;;
     --yes|-y) YES=1 ;;
+    --stop-poc) STOP_POC=1 ;;
     --mirror) [ $# -ge 2 ] || { echo "--mirror 后面要写 cn 或 off" >&2; exit 2; }; MIRROR="$2"; shift ;;
     --mirror=*) MIRROR="${1#--mirror=}" ;;
     --sandbox) [ $# -ge 2 ] || { echo "--sandbox 后面要写 boxlite 或 off" >&2; exit 2; }; SANDBOX="$2"; shift ;;
@@ -67,15 +72,42 @@ die() { printf '  \033[31m✗ [%s]\033[0m %s\n' "$1" "$2" >&2; exit 1; }
 # 本地服务的 argv 带 --heybe-role=task-manager（package.json start）；旧版本只有相对路径 src/main.ts，也一并匹配
 leftovers() { pgrep -fl "fastclaw|heybe-role=task-manager|tsx src/main.ts|boxlite serve" | grep -v -E "pgrep|heybe-desktop-dev" || true; }
 
+POC_HOME="${HEYBE_POC_HOME:-$HOME/.local/opt/heybe-poc}"
+# 残留进程里哪些是 boxlite-poc.sh 起的：给出 PoC 清理命令；--stop-poc 时只结束这些（核对过 pid 文件 + 命令行），别的绝不动
+explain_leftovers() { # code message
+  local left poc others
+  left="$(leftovers)"; poc="$(poc_list "$POC_HOME")"
+  others="$(printf '%s\n' "$left" | awk -v p=" $(printf '%s\n' "$poc" | awk '{printf "%s ", $1}')" 'NF && index(p, " " $1 " ") == 0')"
+  printf '%s\n' "$left"
+  if [ -n "$poc" ]; then
+    printf '  其中 PoC（scripts/poc/boxlite-poc.sh）留下的进程：%s\n' "$(printf '%s\n' "$poc" | awk '{printf "%s%s(pid %s)", (NR>1?"、":""), $2, $1}')" >&2
+    printf '  清理 PoC 进程：scripts/poc/boxlite-poc.sh cleanup（或本脚本加 --stop-poc）\n' >&2
+  fi
+  if [ -n "$others" ]; then
+    printf '  其余进程不是 PoC 起的，本脚本不会结束它们：先退出 Heybe 桌面端（Cmd+Q），或 scripts/poc/t021-mac.sh cleanup\n' >&2
+  fi
+  die "$1" "$2"
+}
+running_check() {
+  [ -n "$(leftovers)" ] || return 0
+  if [ "$STOP_POC" = 1 ] && [ -n "$(poc_list "$POC_HOME")" ]; then
+    echo "== 结束 PoC 留下的进程（--stop-poc）"
+    poc_stop "$POC_HOME"
+    [ -n "$(leftovers)" ] || { ok "PoC 进程已结束"; return 0; }
+  fi
+  explain_leftovers E_RUNNING "已有 fastclaw/本地服务在跑（可能是上次的 t021、PoC 或 Heybe）。先退出，或跑：scripts/poc/t021-mac.sh cleanup"
+}
+
 if [ "$CMD" = "check" ]; then
   left="$(leftovers)"
-  if [ -n "$left" ]; then printf '%s\n' "$left"; die E_LEFTOVER "还有残留进程（见上）"; fi
+  if [ -n "$left" ]; then explain_leftovers E_LEFTOVER "还有残留进程（见上）"; fi
   curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/healthz" && die E_LEFTOVER "端口 ${PORT} 上 FastClaw 还在响应"
   ok "没有残留进程，端口 ${PORT} 已释放"
   exit 0
 fi
 
 echo "== 预检"
+running_check
 [ "$(uname -s)/$(uname -m)" = "Darwin/arm64" ] || die E_PLATFORM "只支持 Apple Silicon Mac（当前 $(uname -s)/$(uname -m)）"
 xcode-select -p >/dev/null 2>&1 || die E_XCODE "缺 Xcode 命令行工具：xcode-select --install"
 command -v node >/dev/null || die E_NODE "缺 node（推荐 Node $(cat "$REPO_ROOT/.nvmrc")：nvm install / fnm install）"
@@ -86,7 +118,6 @@ if command -v rustup >/dev/null && ! rustup target list --installed | grep -q aa
 fi
 ok "node $(node -v)、pnpm $(pnpm -v)、$(cargo -V | cut -d' ' -f1-2)"
 
-if [ -n "$(leftovers)" ]; then die E_RUNNING "已有 fastclaw/本地服务在跑（可能是上次的 t021 或 Heybe）。先退出，或跑：scripts/poc/t021-mac.sh cleanup"; fi
 # 端口被占（例如上次留下、报 "FastClaw dev" 的 daemon，或别的程序）：直接报错，不去连别人的 gateway
 port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/${PORT}") 2>/dev/null; }
 if port_busy; then

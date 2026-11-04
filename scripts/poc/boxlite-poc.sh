@@ -5,6 +5,8 @@
 #   all                         按顺序跑全部步骤，某步失败后继续跑不依赖它的步骤，最后生成 report.md（不自动 cleanup）
 #   precheck | install | serve | api-probe | ws-probe | fc-compat | fastclaw-boxlite | setup boxlite | verify boxlite
 #   metrics | lima | fastclaw-docker | setup docker | verify docker | report | cleanup-fastclaw | cleanup
+#   cleanup-procs / list-procs  只结束 / 列出本脚本起的进程（serve、代理、fastclaw gateway）：pid 文件 + 标记文件，
+#                               杀之前核对命令行（lib-poc-procs.sh），同名的别的进程、被复用的 pid 都不动。cleanup 也走这套。
 #   单步重跑：serve = 启动（已在跑则复用）+ 探测前缀；ws-probe / fc-compat 可单独跑，不会重装。
 # BoxLite REST（0.10.x 实测源码）：serve 无租户段，GET /v1/boxes；0.9.5 及更早是 /v1/default/boxes。
 #   脚本先探测（/v1/me 的 prefix → /v1 → /v1/default → /api/v1…），把命中的前缀写进报告；全 404 就报错并打印探测表。
@@ -40,6 +42,8 @@ POC_ENV="${HEYBE_POC_ENV:-$HOME/.heybe-poc.env}"
 . "$(cd "$(dirname "$0")" && pwd)/lib-fc-agent.sh"
 # shellcheck source=lib-net-verify.sh
 . "$(cd "$(dirname "$0")" && pwd)/lib-net-verify.sh"
+# shellcheck source=lib-poc-procs.sh
+. "$(cd "$(dirname "$0")" && pwd)/lib-poc-procs.sh"
 BOXLITE_DIR="$HOME/.local/opt/boxlite/bin"
 FASTCLAW_DIR="$HOME/.local/opt/fastclaw/bin"
 LOG_DIR="$POC_HOME/logs"
@@ -197,6 +201,7 @@ step_serve() {
     local BOXLITE_SERVE_API_KEY; BOXLITE_SERVE_API_KEY=$(read_key_file "$(serve_key_file)")
     fc_env_bg "$POC_HOME/boxlite.pid" "BOXLITE_SERVE_API_KEY BOXLITE_HOME RUST_LOG" \
       nohup boxlite serve --host 127.0.0.1 --port "$BOXLITE_PORT" >"$LOG_DIR/boxlite-serve.log" 2>&1
+    poc_mark "$POC_HOME" boxlite
     unset BOXLITE_SERVE_API_KEY
     wait_http "$(bl_url /v1/config)" 20 || fail "boxlite serve 未起来，见 ${LOG_DIR}/boxlite-serve.log"
   else
@@ -353,7 +358,7 @@ start_proxy() {
   if [ -s "$(proxy_client_key_file)" ] && proxy_up; then
     pass "BoxLite 代理已在 127.0.0.1:${BOXLITE_PROXY_PORT} 运行（复用）"; return 0
   fi
-  if [ -f "$POC_HOME/boxlite-proxy.pid" ]; then kill "$(cat "$POC_HOME/boxlite-proxy.pid")" 2>/dev/null || true; sleep 1; fi
+  if [ -n "$(poc_verified_pid "$POC_HOME" boxlite-proxy)" ]; then kill "$(poc_verified_pid "$POC_HOME" boxlite-proxy)" 2>/dev/null || true; sleep 1; fi
   new_key_file "$(proxy_client_key_file)"
   local HEYBE_BOXLITE_CLIENT_KEY HEYBE_BOXLITE_UPSTREAM_KEY HEYBE_BOXLITE_PROXY_UPSTREAM HEYBE_BOXLITE_PROXY_PORT HEYBE_BOXLITE_PROXY_STRIP_AUTO_REMOVE
   HEYBE_BOXLITE_CLIENT_KEY=$(read_key_file "$(proxy_client_key_file)")
@@ -365,6 +370,7 @@ start_proxy() {
   fc_env_bg "$POC_HOME/boxlite-proxy.pid" \
     "HEYBE_BOXLITE_PROXY_UPSTREAM HEYBE_BOXLITE_PROXY_PORT HEYBE_BOXLITE_PROXY_STRIP_AUTO_REMOVE HEYBE_BOXLITE_CLIENT_KEY HEYBE_BOXLITE_UPSTREAM_KEY" \
     nohup "$PROXY_TSX" "$PROXY_MAIN" >"$LOG_DIR/boxlite-proxy.log" 2>&1
+  poc_mark "$POC_HOME" boxlite-proxy
   HEYBE_BOXLITE_CLIENT_KEY=""; HEYBE_BOXLITE_UPSTREAM_KEY=""
   local _i; for _i in $(seq 1 20); do proxy_up && break; sleep 1; done
   proxy_up || fail "BoxLite 代理未起来，见 ${LOG_DIR}/boxlite-proxy.log"
@@ -412,6 +418,7 @@ start_fastclaw() { # backend
   # `fastclaw` 无子命令即启动 gateway（FC:cmd/fastclaw/main.go:127）
   # 只传白名单环境变量；BOXLITE_API_KEY（代理 client key）显式放行；DEEPSEEK_API_KEY 不传（已在 init 时写库）
   fc_env_bg "$POC_HOME/fastclaw.pid" "BOXLITE_API_KEY" nohup fastclaw gateway --port "$FASTCLAW_PORT" >"$LOG_DIR/fastclaw-$backend.log" 2>&1
+  poc_mark "$POC_HOME" fastclaw
   echo "$backend" >"$POC_HOME/fastclaw.backend"; echo "${FASTCLAW_DEPLOY:-self-hosted}" >"$POC_HOME/fastclaw.deploy"
   rec "[$backend] fastclaw_deploy=${FASTCLAW_DEPLOY:-self-hosted}"
   wait_http "http://127.0.0.1:$FASTCLAW_PORT/" 30 || fail "FastClaw 未起来，见 ${LOG_DIR}/fastclaw-${backend}.log"
@@ -647,16 +654,15 @@ step_lima() {
 
 # ---------------------------------------------------------------- cleanup
 cleanup_fastclaw() {
-  if [ -f "$POC_HOME/fastclaw.pid" ]; then kill "$(cat "$POC_HOME/fastclaw.pid")" 2>/dev/null || true; sleep 2; fi
-  if [ -f "$POC_HOME/boxlite-proxy.pid" ]; then kill "$(cat "$POC_HOME/boxlite-proxy.pid")" 2>/dev/null || true; fi
-  rm -f "$POC_HOME/boxlite-proxy.pid" "$(proxy_client_key_file)"
-  rm -f "$POC_HOME/fastclaw.pid" "$POC_HOME/fastclaw.backend" "$POC_HOME/fastclaw.deploy"
+  # 只结束 pid 文件里、命令行核对得上的 PoC 进程（lib-poc-procs.sh），不按名字 pkill
+  POC_PROC_NAMES="fastclaw boxlite-proxy" poc_stop "$POC_HOME"
+  rm -f "$(proxy_client_key_file)" "$POC_HOME/fastclaw.backend" "$POC_HOME/fastclaw.deploy"
 }
 step_cleanup() {
   info "清理"
   cleanup_fastclaw
-  [ -f "$POC_HOME/boxlite.pid" ] && kill "$(cat "$POC_HOME/boxlite.pid")" 2>/dev/null || true
-  rm -f "$POC_HOME/boxlite.pid" "$(serve_key_file)" "$API_FILE" "$COMPAT_FILE" "$SECRET_FILE"
+  POC_PROC_NAMES="boxlite" poc_stop "$POC_HOME"
+  rm -f "$(serve_key_file)" "$API_FILE" "$COMPAT_FILE" "$SECRET_FILE"
   if command -v docker >/dev/null && [ -S "$HOME/.lima/$LIMA_NAME/sock/docker.sock" ]; then
     DOCKER_HOST="unix://$HOME/.lima/$LIMA_NAME/sock/docker.sock" docker ps -aq --filter label=fastclaw=sandbox \
       | xargs env DOCKER_HOST="unix://$HOME/.lima/$LIMA_NAME/sock/docker.sock" docker rm -f >/dev/null 2>&1 || true
@@ -788,5 +794,7 @@ case "${1:-}" in
   report) step_report ;;
   cleanup-fastclaw) cleanup_fastclaw; pass "FastClaw 已停止" ;;
   cleanup) step_cleanup ;;
+  cleanup-procs) poc_stop "$POC_HOME"; left=$(poc_list "$POC_HOME"); [ -z "$left" ] || { echo "$left"; exit 1; }; echo "PoC 进程已清理" ;;
+  list-procs) poc_list "$POC_HOME" ;;
   *) awk 'NR > 1 && /^set -euo/ { exit } NR > 1' "$0"; exit 2 ;;
 esac

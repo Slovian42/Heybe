@@ -27,7 +27,7 @@ jobs:
                    scripts/poc/report-table-test.sh scripts/poc/t032-mock-test.sh \
                    scripts/poc/argv-secret-mock-test.sh scripts/poc/net-verify-mock-test.sh \
                    scripts/poc/boxlite-setup-mock-test.sh scripts/poc/offline-wait-mock-test.sh \
-                   scripts/dev/product-sandbox-check-mock-test.sh; do
+                   scripts/dev/product-sandbox-check-mock-test.sh scripts/poc/boxlite-poc-cleanup-mock-test.sh; do
             echo "== $t"; bash "$t"
           done
   dco:
