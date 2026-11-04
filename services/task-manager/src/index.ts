@@ -81,8 +81,10 @@ export {
 } from "./chat.js";
 export { classifyChatError, classifyUpstreamStatus, type ClassifiedChatError } from "./chat-errors.js";
 export {
+  AUTH_PROBES,
   BOXLITE_PREFIX,
   SandboxError,
+  assertServeAuthenticated,
   boxliteServeArgs,
   generateKey,
   sandboxGatewayEnv,
@@ -91,6 +93,14 @@ export {
   type SandboxHandle,
   type SandboxOptions,
 } from "./sandbox.js";
+export {
+  FASTCLAW_DEFAULT_IMAGE,
+  netProbeCmd,
+  parseMarkers,
+  runSandboxSelfcheck,
+  type SelfcheckOptions,
+  type SelfcheckResult,
+} from "./sandbox-selfcheck.js";
 export { GatewayError, startGateway, type GatewayErrorCode, type GatewayHandle, type GatewayOptions } from "./gateway.js";
 export {
   ERROR_PREFIX,
@@ -158,6 +168,7 @@ export {
   STATE_JSON_FILE,
   STATE_PID_FILE,
   STATE_SANDBOX_LOG,
+  STATE_SELFCHECK_SOCK,
   openStateDir,
   sandboxPorts,
   serviceModeLine,

@@ -4,11 +4,18 @@
 //   kill: task-manager.pid, service-state.json (pids/ports/modes only, never keys) and sandbox.log
 //   (the BoxLite proxy's lines, also on stderr). Removed again on a clean stop.
 import { appendFileSync, chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 
 export const STATE_PID_FILE = "task-manager.pid";
 export const STATE_JSON_FILE = "service-state.json";
 export const STATE_SANDBOX_LOG = "sandbox.log";
+/**
+ * Unix socket for the sandbox self-check (POST /sandbox/selfcheck). Access control is the file
+ * system: the state dir is 0700 and the socket 0600, so only the same user can connect; no TCP
+ * port, no token, no key leaves the service (the check runs in here with the in-memory client key).
+ */
+export const STATE_SELFCHECK_SOCK = "selfcheck.sock";
 /** argv marker on the service process (package.json start script) so `pkill -f` can match it exactly. */
 export const ROLE_MARKER = "--heybe-role=task-manager";
 
@@ -56,6 +63,8 @@ export interface StateDir {
   /** Appends to sandbox.log (and nothing else). */
   sandboxLog(line: string): void;
   remove(): void;
+  /** Serve POST /sandbox/selfcheck on <dir>/selfcheck.sock (one run at a time). */
+  serveSelfcheck(run: () => Promise<unknown>): Promise<void>;
 }
 
 export function openStateDir(dir: string): StateDir {
@@ -67,6 +76,8 @@ export function openStateDir(dir: string): StateDir {
     chmodSync(f, 0o600);
   };
   write600(STATE_SANDBOX_LOG, "");
+  const sock = join(dir, STATE_SELFCHECK_SOCK);
+  let selfcheckServer: Server | undefined;
   return {
     write(st) {
       write600(STATE_JSON_FILE, `${JSON.stringify(st)}\n`);
@@ -80,7 +91,39 @@ export function openStateDir(dir: string): StateDir {
       }
     },
     remove() {
-      for (const f of [STATE_PID_FILE, STATE_JSON_FILE]) rmSync(join(dir, f), { force: true });
+      selfcheckServer?.close();
+      selfcheckServer = undefined;
+      for (const f of [STATE_PID_FILE, STATE_JSON_FILE, STATE_SELFCHECK_SOCK]) rmSync(join(dir, f), { force: true });
+    },
+    serveSelfcheck(run) {
+      rmSync(sock, { force: true });
+      let busy = false;
+      const srv = createServer((req, res) => {
+        const send = (code: number, body: unknown) => {
+          res.writeHead(code, { "content-type": "application/json" });
+          res.end(`${JSON.stringify(body)}\n`);
+        };
+        req.resume();
+        if (req.method !== "POST" || req.url !== "/sandbox/selfcheck") return send(404, { error: "not found" });
+        if (busy) return send(409, { error: "自检正在进行" });
+        busy = true;
+        run().then(
+          (r) => send(200, r),
+          (e: unknown) => send(500, { ok: false, error: e instanceof Error ? e.message : "自检出错" }),
+        ).finally(() => {
+          busy = false;
+        });
+      });
+      srv.requestTimeout = 0;
+      srv.headersTimeout = 60_000;
+      selfcheckServer = srv;
+      return new Promise((resolve, reject) => {
+        srv.once("error", reject);
+        srv.listen(sock, () => {
+          chmodSync(sock, 0o600);
+          resolve();
+        });
+      });
     },
   };
 }

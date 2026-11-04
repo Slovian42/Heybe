@@ -186,6 +186,14 @@ export async function startHeybeService(
   };
   log(serviceModeLine(state));
   stateDir?.write(state);
+  if (stateDir && sandbox) {
+    const sb = sandbox;
+    const image = env.HEYBE_SANDBOX_SELFCHECK_IMAGE?.trim() || undefined;
+    // Diagnostic only: if the socket can't be created the service keeps running without it.
+    await stateDir.serveSelfcheck(() => sb.selfcheck({ image })).catch((e: unknown) => {
+      log(`heybe-service: 沙箱自检接口没起来（${e instanceof Error ? e.message : "未知错误"}）`);
+    });
+  }
 
   let stopped = false;
   return {

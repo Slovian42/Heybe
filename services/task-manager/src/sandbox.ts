@@ -16,6 +16,7 @@ import { randomBytes } from "node:crypto";
 import { createServer, type AddressInfo } from "node:net";
 
 import { probeFcCompat, startBoxliteProxy, type BoxliteProxy, type FcCompatVerdict } from "./boxlite-proxy.js";
+import { runSandboxSelfcheck, type SelfcheckResult } from "./sandbox-selfcheck.js";
 import { buildChildEnv, type ChildEnvOptions } from "./child-env.js";
 import { LOOPBACK_HOST } from "./constants.js";
 
@@ -97,6 +98,8 @@ export interface SandboxHandle {
   proxyUrl: string;
   serveUrl: string;
   compat: FcCompatVerdict;
+  /** Create a box through our proxy (FastClaw's body, no network), run the net probes, delete it. Keys stay in here. */
+  selfcheck(opts?: { image?: string }): Promise<SelfcheckResult>;
   /** Resolves when `boxlite serve` exits. */
   exited: Promise<number | null>;
   stop(graceMs?: number): Promise<void>;
@@ -222,6 +225,10 @@ export async function startSandbox(opts: SandboxOptions): Promise<SandboxHandle>
       compat,
       exited,
       stop,
+      selfcheck: (o) => {
+        if (!proxy) return Promise.reject(new Error("沙箱已停止"));
+        return runSandboxSelfcheck({ proxyUrl: proxy.url, clientKey, servePort: port, image: o?.image, fetchImpl: doFetch });
+      },
     };
   } catch (err) {
     await stop();

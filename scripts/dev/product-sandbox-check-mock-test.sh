@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # product-sandbox-check.sh 的干跑测试：假本地服务进程树（服务 + 代理 + 假 serve + 假 gateway 子进程）、假 fastclaw。
-# 模式 good 应 8 项全 PASS；bad 逐项出错；noexec 模型没调 exec；没有状态文件时直接 FAIL。全程不应打印任何假密钥。
+# 模式 good 应 8 项全 PASS；bad 逐项出错；nosock 旧版服务没有自检接口；refuse 模型拒绝执行（HEYBE_CHECK_CHAT=1 只作参考，
+# 仍 8 项全 PASS）；没有状态文件时直接 FAIL。全程不应打印任何假密钥。
 # 用法: scripts/dev/product-sandbox-check-mock-test.sh   （任一断言失败退出码非 0；Linux 用 ss，macOS 用 lsof）
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -81,11 +82,27 @@ class GW(http.server.BaseHTTPRequestHandler):
         open(os.environ["FAKE_PROMPT"], "w").write(body["messages"][0]["content"])
         m = os.environ["FAKE_MODE"]
         ext = "OPEN" if m == "bad" else "NET_BLOCKED"
-        chunks = [] if m == "noexec" else [{"tool": {"name": "exec", "status": "running"}}, {"tool": {"name": "exec", "status": "done"}}]
+        chunks = [] if m == "refuse" else [{"tool": {"name": "exec", "status": "running"}}, {"tool": {"name": "exec", "status": "done"}}]
         chunks.append({"choices": [{"delta": {"content": f"CURL=yes\nEXT={ext}\nHOST8100=NET_BLOCKED\nHOST11434=NET_BLOCKED\nDNS=NET_BLOCKED\n"}}]})
         self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.end_headers()
         for c in chunks: self.wfile.write(f"data: {json.dumps(c)}\n\n".encode())
         self.wfile.write(b"data: [DONE]\n\n")
+
+class SelfcheckSrv(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    daemon_threads = True
+
+class SC(http.server.BaseHTTPRequestHandler):
+    # 假自检接口：像本地服务那样经代理建箱 → 代理日志新增一条建箱 POST → 回标记（bad：没强制禁出网，EXT=OPEN）
+    def log_message(self, *a): pass
+    def address_string(self): return "unix"
+    def do_POST(self):
+        bad = os.environ["FAKE_MODE"] == "bad"
+        with open(os.path.join(state, "sandbox.log"), "a") as f:
+            f.write("x POST /v1/boxes: stripped auto_remove; network set\n" if bad else "x POST /v1/boxes: stripped auto_remove; network set; outbound=disabled\n")
+        mk = {"CURL": "yes", "EXT": "OPEN" if bad else "NET_BLOCKED", "HOST8100": "NET_BLOCKED", "HOST11434": "NET_BLOCKED", "DNS": "NET_BLOCKED"}
+        b = json.dumps({"ok": not bad, "request_network": "not_specified", "image": "thinkany/fastclaw-sandbox:latest", "create_http": 201,
+                        "start_http": 204, "exec_http": 201, "attach": "101", "markers": mk, "delete_http": 204, "elapsed_ms": 4200}).encode()
+        self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
 
 role = os.environ.get("FAKE_ROLE", "root")
 if role == "serve":
@@ -118,6 +135,10 @@ with open(os.path.join(state, "sandbox.log"), "w") as f:
 json.dump({"pid": os.getpid(), "service_port": svc_port, "sandbox": "boxlite", "deploy": "hosted",
            "gateway_port": gw_port, "serve_port": serve_port, "proxy_port": proxy_port, "started_at": "x"},
           open(os.path.join(state, "service-state.json"), "w"))
+if mode != "nosock":
+    sock = os.path.join(state, "selfcheck.sock")
+    sc = SelfcheckSrv(sock, SC); os.chmod(sock, 0o600)
+    threading.Thread(target=sc.serve_forever, daemon=True).start()
 open(os.path.join(state, "task-manager.pid"), "w").write(f"{os.getpid()}\n")
 time.sleep(3600)
 PY
@@ -130,7 +151,7 @@ start_fake() { # mode camoufox值
   for _ in $(seq 1 50); do [ -s "$STATE/task-manager.pid" ] && return 0; sleep 0.1; done
   echo "假服务没起来" >&2; exit 1
 }
-run_check() { # 退出码写 $T/rc
+run_check() { # 退出码写 $T/rc；可在前面加 HEYBE_CHECK_CHAT=1
   HEYBE_T021_HOME="$T021" HEYBE_FASTCLAW_BIN="$T/bin/fastclaw" HEYBE_POC_ENV="$T/poc.env" HEYBE_CHECK_LOG_DIR="$T" \
     bash "$CHECK" >"$T/out" 2>&1
   echo $? >"$T/rc"
@@ -151,16 +172,17 @@ for i in 1 2 3 4 5 6 7 8; do has "第 ${i} 项 PASS" "PASS ${i}/8"; done
 has "汇总" "PASS 8 / FAIL 0"
 has "代理日志拒绝行单独计数" "拒绝 1 条"
 has "serve 的 /v1/config 公开 200 不算失败（#90 第三次复验第 1 项的根因）" "GET /v1/config=200，公开路由，不计"
-SERVE_PORT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["serve_port"])' "$STATE/service-state.json")
-if grep -qF ":${SERVE_PORT}/v1/config" "$T/prompt.txt" && ! grep -qF ':8100/' "$T/prompt.txt"; then ok "探测命令里宿主机端口换成了 serve 端口 ${SERVE_PORT}"
-else bad "探测命令没换端口"; fi
-grep -q '^exec ' "$T/product-check-tools.txt" && ok "工具事件记录了 exec" || bad "没记录工具事件"
+has "第 3 项看的是本次自检新增的建箱记录" "新增建箱 POST 1 条，全部 outbound=disabled"
+has "第 7 项走自检接口" "沙箱自检：外网、宿主机 serve"
+hasnt "默认不做对话" "参考（不计入）"
+[ ! -e "$T/prompt.txt" ] && ok "默认没有给模型发对话" || bad "默认不该发对话"
 no_keys good
 
 echo "== 3 bad：逐项出错"
 start_fake bad true; run_check
 [ "$(cat "$T/rc")" = 1 ] && ok "退出码 1" || bad "退出码 $(cat "$T/rc")"
 for i in 1 2 3 5 6 7 8; do has "第 ${i} 项 FAIL" "FAIL ${i}/8"; done
+has "第 3 项：本次建箱没 outbound=disabled" "本次新增建箱 POST 1 条，其中 outbound=disabled 0 条"
 has "部署模式仍是 hosted" "PASS 4/8"
 has "不在 127.0.0.1 的计数" "其中不在 127.0.0.1 的 1 个"
 has "外网未拦截" "EXT=OPEN"
@@ -168,12 +190,24 @@ has "camoufox 读回 true" "读回「true」"
 has "argv 已知密钥命中" "已知值 1"
 no_keys bad
 
-echo "== 4 noexec：模型没调 exec"
-start_fake noexec false; run_check
+echo "== 4 nosock：旧版服务没有自检接口"
+start_fake nosock false; run_check
 [ "$(cat "$T/rc")" = 1 ] && ok "退出码 1" || bad "退出码 $(cat "$T/rc")"
-has "第 7 项 FAIL" "FAIL 7/8 工具事件里没有 exec"
-has "其余 7 项 PASS" "PASS 7 / FAIL 1"
-no_keys noexec
+has "第 7 项 FAIL 并提示重启" "FAIL 7/8 没有自检接口"
+has "第 3 项 FAIL（本次没有新建箱记录）" "FAIL 3/8"
+has "其余 6 项 PASS" "PASS 6 / FAIL 2"
+no_keys nosock
+
+echo "== 5 refuse：HEYBE_CHECK_CHAT=1，模型拒绝执行，只作参考"
+start_fake refuse false
+HEYBE_CHECK_CHAT=1 run_check
+[ "$(cat "$T/rc")" = 0 ] && ok "退出码 0（对话不计入）" || { bad "退出码 $(cat "$T/rc")"; sed 's/^/       | /' "$T/out"; }
+has "参考行" "参考（不计入）/v1 对话：模型没调 exec"
+has "仍 8 项 PASS" "PASS 8 / FAIL 0"
+SERVE_PORT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["serve_port"])' "$STATE/service-state.json")
+if grep -qF ":${SERVE_PORT}/v1/config" "$T/prompt.txt" && ! grep -qF ':8100/' "$T/prompt.txt"; then ok "参考对话的探测命令里宿主机端口换成了 serve 端口 ${SERVE_PORT}"
+else bad "探测命令没换端口"; fi
+no_keys refuse
 stop_fake
 
 if [ "$FAILS" = 0 ]; then echo "全部通过"; else echo "失败 ${FAILS} 项"; exit 1; fi

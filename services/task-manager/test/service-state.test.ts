@@ -1,5 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:net";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,6 +11,7 @@ import {
   STATE_JSON_FILE,
   STATE_PID_FILE,
   STATE_SANDBOX_LOG,
+  STATE_SELFCHECK_SOCK,
   openStateDir,
   sandboxPorts,
   serviceModeLine,
@@ -73,6 +75,7 @@ describe("service mode line and state dir (#90 recheck)", () => {
         HEYBE_FASTCLAW_GATEWAY_BIN: FAKE_GW,
         HEYBE_BOXLITE_BIN: "/stub/boxlite",
         HEYBE_SERVICE_STATE_DIR: dir,
+        HEYBE_SANDBOX_SELFCHECK_IMAGE: "img-x",
         FASTCLAW_PORT: String(gwPort),
         PATH: process.env.PATH,
         HOME: process.env.HOME,
@@ -89,6 +92,7 @@ describe("service mode line and state dir (#90 recheck)", () => {
             compat: "ok",
             exited: new Promise(() => undefined),
             stop: async () => undefined,
+            selfcheck: async (so) => ({ ok: true, request_network: "not_specified", image: so?.image ?? "img", create_http: 201, markers: { EXT: "NET_BLOCKED" }, elapsed_ms: 1 }),
           };
           return h;
         },
@@ -106,10 +110,26 @@ describe("service mode line and state dir (#90 recheck)", () => {
       for (const f of [STATE_JSON_FILE, STATE_SANDBOX_LOG]) expect(readFileSync(join(dir, f), "utf8")).not.toContain(CLIENT_KEY);
       expect(lines.join("\n")).not.toContain(CLIENT_KEY);
       expect(lines.join("\n")).not.toContain(TOKEN);
+      // self-check socket: 0600, same-user only, no token needed, answers with markers only.
+      const sock = join(dir, STATE_SELFCHECK_SOCK);
+      expect(statSync(sock).mode & 0o777).toBe(0o600);
+      const got = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const rq = request({ socketPath: sock, method: "POST", path: "/sandbox/selfcheck" }, (rs) => {
+          let b = "";
+          rs.on("data", (c: Buffer) => (b += c.toString()));
+          rs.on("end", () => resolve({ status: rs.statusCode ?? 0, body: b }));
+        });
+        rq.on("error", reject);
+        rq.end();
+      });
+      expect(got.status).toBe(200);
+      expect(JSON.parse(got.body)).toMatchObject({ ok: true, image: "img-x", markers: { EXT: "NET_BLOCKED" } });
+      expect(got.body).not.toContain(CLIENT_KEY);
     } finally {
       await svc.stop();
     }
     expect(existsSync(join(dir, STATE_PID_FILE))).toBe(false);
+    expect(existsSync(join(dir, STATE_SELFCHECK_SOCK))).toBe(false);
   });
 
   it("without the sandbox: says so (self-hosted)", async () => {

@@ -28,6 +28,13 @@ writeFileSync(
     keySha: process.env.BOXLITE_SERVE_API_KEY ? createHash("sha256").update(process.env.BOXLITE_SERVE_API_KEY).digest("hex") : null,
   }),
 );
+const boxes = new Map();
+const execs = new Map();
+const frame = (text) => {
+  const p = Buffer.from(text);
+  const h = p.length < 126 ? Buffer.from([0x81, p.length]) : Buffer.from([0x81, 126, p.length >> 8, p.length & 255]);
+  return Buffer.concat([h, p]);
+};
 const server = http.createServer((req, res) => {
   const chunks = [];
   req.on("data", (c) => chunks.push(c));
@@ -46,11 +53,42 @@ const server = http.createServer((req, res) => {
       if ("auto_remove" in body) return send(400, { error: { message: "unknown field `auto_remove`, expected one of `image`, `network`" } });
       if (!body.image && !("auto_remove" in body)) return send(400, { error: { message: "missing field `image`" } });
       if (typeof body.cpus === "string") return send(400, { error: { message: "invalid type: string, expected u8 at cpus" } });
+      boxes.set("box_fake", body);
       return send(201, { box_id: "box_fake" });
+    }
+    let m;
+    if (req.method === "POST" && (m = req.url.match(/^\/v1\/boxes\/([^/]+)\/start$/))) return boxes.has(m[1]) ? send(204, {}) : send(404, {});
+    if (req.method === "POST" && (m = req.url.match(/^\/v1\/boxes\/([^/]+)\/exec$/))) {
+      if (!boxes.has(m[1])) return send(404, {});
+      const ex = JSON.parse(Buffer.concat(chunks).toString());
+      appendFileSync(join(home, "exec.jsonl"), JSON.stringify(ex) + "\n");
+      execs.set("exe_fake", { box: m[1], cmd: ex.args?.[1] ?? "" });
+      return send(201, { execution_id: "exe_fake" });
+    }
+    if (req.method === "DELETE" && (m = req.url.match(/^\/v1\/boxes\/([^/?]+)\?force=true$/))) {
+      appendFileSync(join(home, "deleted.txt"), m[1] + "\n");
+      return boxes.delete(m[1]) ? send(204, {}) : send(404, {});
     }
     if (req.method === "GET" && req.url === "/v1/boxes") return send(200, { boxes: [] });
     send(404, { error: { message: "not found" } });
   });
+});
+// WS attach: probe output depends on the box's network, like a real VM ("leaky" ignores it).
+server.on("upgrade", (req, sock) => {
+  const m = req.url.match(/^\/v1\/boxes\/([^/]+)\/executions\/([^/]+)\/attach$/);
+  if ((key && req.headers.authorization !== `Bearer ${key}`) || !m || !execs.has(m[2])) {
+    sock.end("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n");
+    return;
+  }
+  const net = boxes.get(m[1])?.network?.outbound?.mode;
+  const blocked = net === "disabled" && mode !== "leaky";
+  const r = (open) => (blocked ? "NET_BLOCKED" : open);
+  const port = (execs.get(m[2]).cmd.match(/host\.boxlite\.internal:(\d+)/) ?? [])[1];
+  const out = `CURL=yes\nEXT=${r("OPEN")}\nHOST8100=${r("OPEN")}\nHOST11434=${r("OPEN")}\nDNS=${r("RESOLVED")}\nPORT=${port}\n`;
+  sock.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n");
+  sock.write(frame(JSON.stringify({ type: "stdout", data: out })));
+  sock.write(frame(JSON.stringify({ type: "exit", exit_code: 0 })));
+  sock.end(Buffer.from([0x88, 0]));
 });
 server.listen(port, "127.0.0.1");
 process.on("SIGTERM", () => server.close(() => process.exit(0)));

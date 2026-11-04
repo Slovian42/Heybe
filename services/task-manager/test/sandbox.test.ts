@@ -9,6 +9,7 @@ import { buildChildEnv } from "../src/child-env.js";
 import { startGateway } from "../src/gateway.js";
 import { boxliteServeArgs, freeLoopbackPort, generateKey, sandboxGatewayEnv, SandboxError, startSandbox, type SandboxHandle } from "../src/sandbox.js";
 import { startHeybeService } from "../src/service.js";
+import { netProbeCmd } from "../src/sandbox-selfcheck.js";
 
 const FAKE_BOXLITE = new URL("./fixtures/fake-boxlite.mjs", import.meta.url).pathname;
 const FAKE_GW = new URL("./fixtures/fake-gateway.mjs", import.meta.url).pathname;
@@ -220,5 +221,44 @@ describe("fake boxlite serve behaves like the real one (#90 Mac recheck 3, item 
 
   it("given no key: /v1/boxes answers 200 without a key (what the startup check must catch)", async () => {
     expect(await run(false)).toEqual({ get: 200, cfg: 200, withAuth: 200 });
+  });
+});
+
+describe("sandbox self-check through the proxy (#90 Mac recheck 3, item B)", () => {
+  it("creates a box with FastClaw's body (no network), proxy forces disabled, all probes NET_BLOCKED, box deleted", async () => {
+    const home = boxliteHome();
+    const logs: string[] = [];
+    const sb = await startSandbox({ bin: FAKE_BOXLITE, env: parentEnv(home), log: (l) => logs.push(l) });
+    handles.push(sb);
+    const r = await sb.selfcheck({ image: "img:1" });
+    expect(r).toMatchObject({ ok: true, request_network: "not_specified", create_http: 201, start_http: 204, exec_http: 201, attach: "101", delete_http: 204 });
+    expect(r.markers).toEqual({ CURL: "yes", EXT: "NET_BLOCKED", HOST8100: "NET_BLOCKED", HOST11434: "NET_BLOCKED", DNS: "NET_BLOCKED" });
+    const created = readFileSync(join(home, "boxes.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>).at(-1);
+    expect(created).toEqual({ image: "img:1", network: { outbound: { mode: "disabled" }, inbound: { mode: "disabled" } } });
+    expect(logs.some((l) => /^POST \/v1\/boxes: .*outbound=disabled$/.test(l))).toBe(true);
+    // probe aims at this run's serve port, not 8100
+    const ex = JSON.parse(readFileSync(join(home, "exec.jsonl"), "utf8").trim()) as { args: string[] };
+    expect(ex.args[1]).toContain(`host.boxlite.internal:${new URL(sb.serveUrl).port}/`);
+    expect(readFileSync(join(home, "deleted.txt"), "utf8").trim()).toBe("box_fake");
+    expect(JSON.stringify(r)).not.toContain(sb.gatewayEnv.set?.BOXLITE_API_KEY ?? "x");
+  });
+
+  it("reports OPEN when the box can reach out (and still deletes it)", async () => {
+    const home = boxliteHome("leaky");
+    const sb = await startSandbox({ bin: FAKE_BOXLITE, env: parentEnv(home), log: () => undefined });
+    handles.push(sb);
+    const r = await sb.selfcheck();
+    expect(r.ok).toBe(false);
+    expect(r.markers.EXT).toBe("OPEN");
+    expect(r.image).toBe("thinkany/fastclaw-sandbox:latest");
+    expect(readFileSync(join(home, "deleted.txt"), "utf8").trim()).toBe("box_fake");
+  });
+
+  it("probe command matches NET_PROBE_CMD in lib-net-verify.sh (only the host port differs)", () => {
+    const lib = readFileSync(new URL("../../../scripts/poc/lib-net-verify.sh", import.meta.url), "utf8");
+    const cmd = /^NET_PROBE_CMD='(.*)'$/m.exec(lib)?.[1];
+    expect(cmd).toBeTruthy();
+    expect(netProbeCmd(8100)).toBe(cmd);
+    expect(netProbeCmd(59703)).toContain("host.boxlite.internal:59703/");
   });
 });
