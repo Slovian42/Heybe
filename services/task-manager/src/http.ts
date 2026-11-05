@@ -6,7 +6,16 @@ import type Database from "better-sqlite3";
 import type { Budget } from "@heybe/shared-types";
 import type { CreateNodeInput, CreateTaskInput } from "@heybe/shared-types/task-manager";
 
-import { CHAT_PATH, corsHeaders, handleChatMessage, type ChatStreamFn } from "./chat.js";
+import {
+  CHAT_PATH,
+  ChatRunner,
+  corsHeaders,
+  handleChatMessage,
+  handleChatRoute,
+  isChatPath,
+  sendChatJson,
+  type ChatStreamFn,
+} from "./chat.js";
 import { LOOPBACK_HOST } from "./constants.js";
 import {
   ConflictError,
@@ -173,7 +182,7 @@ export interface TaskHttpOptions {
    * (e.g. FastClawNodeExecutor.abortTask) and return how many were aborted.
    */
   onCancel?: (taskId: string) => number;
-  /** Enables POST /chat/sessions/:id/messages (SSE). Omit to keep chat off. */
+  /** Enables the /chat/* routes (SSE, resumable turns kept in SQLite). Omit to keep chat off. */
   chat?: ChatStreamFn;
   /**
    * Startup token (19-b). When set, every route except GET /health and CORS
@@ -197,6 +206,7 @@ async function handle(
   req: IncomingMessage,
   res: ServerResponse,
   opts: TaskHttpOptions = {},
+  runner?: ChatRunner,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", `http://${LOOPBACK_HOST}`);
   const method = req.method ?? "GET";
@@ -208,8 +218,8 @@ async function handle(
     sendJson(res, 200, { ok: true });
     return;
   }
-  const chat = CHAT_PATH.exec(url.pathname);
-  if (chat && opts.chat && method === "OPTIONS") {
+  const chatRoute = runner !== undefined && isChatPath(url.pathname);
+  if (chatRoute && method === "OPTIONS") {
     res.writeHead(204, corsHeaders(req.headers.origin));
     res.end();
     return;
@@ -219,12 +229,13 @@ async function handle(
     res.end(JSON.stringify({ error: "unauthorized" }));
     return;
   }
-  if (chat && opts.chat) {
-    if (method !== "POST") {
-      sendJson(res, 405, { error: "method not allowed" });
+  if (chatRoute && runner) {
+    const post = CHAT_PATH.exec(url.pathname);
+    if (post && method === "POST") {
+      await handleChatMessage(req, res, post[1] ?? "", await readBody(req), runner);
       return;
     }
-    await handleChatMessage(req, res, chat[1] ?? "", await readBody(req), opts.chat);
+    if (!handleChatRoute(req, res, url, runner)) sendChatJson(req, res, 405, { error: "method not allowed" });
     return;
   }
   if (opts.providers && url.pathname.startsWith("/providers/")) {
@@ -290,8 +301,9 @@ export function startTaskHttpServer(
   if (host !== LOOPBACK_HOST) {
     return Promise.reject(new Error(`task manager HTTP server only listens on ${LOOPBACK_HOST}`));
   }
+  const runner = opts.chat ? new ChatRunner(db, opts.chat) : undefined;
   const server = http.createServer((req, res) => {
-    void handle(db, req, res, opts).catch((error: unknown) => {
+    void handle(db, req, res, opts, runner).catch((error: unknown) => {
       if (res.headersSent) {
         res.destroy();
         return;
@@ -299,6 +311,8 @@ export function startTaskHttpServer(
       sendJson(res, statusFor(error), { error: errorMessage(error) });
     });
   });
+  // Quit / service stop: running chat turns end as interrupted before the DB closes.
+  server.on("close", () => runner?.shutdown());
   return new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(opts.port ?? 0, host, () => {

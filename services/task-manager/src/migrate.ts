@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 
+import { CHAT_TURNS_SQL } from "./chat-store.js";
 import { SCHEMA_SQL, SCHEMA_VERSION } from "./schema.js";
 import { isoNow } from "./time.js";
 
@@ -29,6 +30,14 @@ export const MIGRATIONS: readonly Migration[] = [
       db.exec(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_idempotency_key ON tasks(idempotency_key)",
       );
+    },
+  },
+  {
+    // #19 part 2: chat turns survive window close / UI refresh / service restart.
+    version: SCHEMA_VERSION + 2,
+    name: "chat_turns",
+    up(db) {
+      db.exec(CHAT_TURNS_SQL);
     },
   },
 ];

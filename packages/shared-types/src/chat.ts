@@ -34,6 +34,12 @@ export type ChatErrorReason =
   | "interrupted"
   /** The local FastClaw gateway did not answer, or rejected Heybe's own token. */
   | "runtime_unavailable"
+  /** The sandbox refused to run a step (no sandbox available / host execution not allowed). */
+  | "sandbox_denied"
+  /** The local runtime itself failed (an `E_FC_*` service error code). */
+  | "runtime_error"
+  /** The local service was restarted while this turn was running; the outcome is unknown. */
+  | "service_restarted"
   /** Anything else; `code` carries a short error code. */
   | "unknown";
 
@@ -47,16 +53,94 @@ export const CHAT_ERROR_MESSAGES: Readonly<Record<ChatErrorReason, string>> = {
   model_not_found: "模型不存在，请到设置里检查模型名",
   interrupted: "中断，结果未知",
   runtime_unavailable: "本地运行时未响应",
+  sandbox_denied: "沙箱拒绝执行这一步（没有可用的沙箱，或不允许在本机直接执行），没做成",
+  runtime_error: "本地运行时出错",
+  service_restarted: "本地服务重启过，这一轮中断了，结果未知",
   unknown: "没做成，请稍后再试",
 };
 
-/** Text for a reason; `unknown` (and any reason given a code) shows `（错误码 …）`. */
+/**
+ * Chinese text for the local service / FastClaw gateway error codes (`HEYBE_SERVICE_ERROR`, see
+ * services/task-manager/src/gateway.ts). Used when a chat turn fails with one of them.
+ */
+export const SERVICE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  E_FC_PORT_BUSY: "FastClaw 端口被别的程序占用，本地运行时起不来",
+  E_FC_FOREIGN_GATEWAY: "端口上已经有一个不是 Heybe 启动的 FastClaw，本地运行时起不来",
+  E_FC_VERSION_MISMATCH: "FastClaw 版本和 Heybe 要求的不一致，请重新安装同一版本",
+  E_FC_READY_TIMEOUT: "FastClaw 启动超时，本地运行时没有就绪",
+  E_FC_EXITED: "FastClaw 意外退出了，本地运行时不可用",
+  E_FC_SKILL_DISABLE_FAILED: "关闭 FastClaw 内置技能失败，本地运行时没有启动",
+};
+
+/** Text for a reason; `unknown` / `runtime_error` (given a code) show `（错误码 …）`. */
 export function chatErrorMessage(reason: ChatErrorReason, code?: string): string {
+  if (reason === "runtime_error" && code) {
+    const known = SERVICE_ERROR_MESSAGES[code];
+    return `${known ?? CHAT_ERROR_MESSAGES.runtime_error}（错误码 ${code}）`;
+  }
   const base = CHAT_ERROR_MESSAGES[reason];
   return reason === "unknown" && code ? `${base}（错误码 ${code}）` : base;
 }
 
+/** Where a reply came from: cloud provider, local Ollama, or a custom OpenAI-compatible endpoint. */
+export type ModelLocality = "cloud" | "local" | "custom";
+
+/** The model FastClaw actually used for a turn (#19 part 2, item 4). */
+export interface ChatModelSource {
+  /** FastClaw provider name, e.g. `deepseek`, `ollama`, or an openai_compatible config id. */
+  provider: string;
+  /** Model id at the provider, e.g. `deepseek-chat`, `qwen2.5:3b`. */
+  model: string;
+  /** Display name of the provider, e.g. `DeepSeek`, `本地 Ollama`. */
+  label: string;
+  locality: ModelLocality;
+}
+
+const PROVIDER_LABELS: Readonly<Record<string, { label: string; locality: ModelLocality }>> = {
+  deepseek: { label: "DeepSeek", locality: "cloud" },
+  openai: { label: "OpenAI", locality: "cloud" },
+  anthropic: { label: "Anthropic", locality: "cloud" },
+  openrouter: { label: "OpenRouter", locality: "cloud" },
+  ollama: { label: "本地 Ollama", locality: "local" },
+};
+
+const MODEL_TEXT = /^[\w.:/@+-]{1,160}$/;
+
+/**
+ * Parse the `model` FastClaw puts on every /v1 SSE chunk. It is the agent's configured
+ * `<provider>/<model>` (agentcli normalizeProviderModel), i.e. what the turn really used.
+ * Returns undefined for anything that does not look like a model id.
+ */
+export function modelSourceFromFastClaw(raw: string | undefined | null): ChatModelSource | undefined {
+  const text = typeof raw === "string" ? raw.trim() : "";
+  if (!text || !MODEL_TEXT.test(text)) return undefined;
+  const slash = text.indexOf("/");
+  if (slash <= 0 || slash === text.length - 1) {
+    return { provider: "", model: text, label: "未知提供方", locality: "custom" };
+  }
+  const provider = text.slice(0, slash).toLowerCase();
+  const model = text.slice(slash + 1);
+  const known = PROVIDER_LABELS[provider];
+  if (known) return { provider, model, ...known };
+  return { provider, model, label: `自定义接口 ${provider}`, locality: "custom" };
+}
+
+export const MODEL_LOCALITY_TEXT: Readonly<Record<ModelLocality, string>> = {
+  cloud: "云端",
+  local: "本地",
+  custom: "自定义接口",
+};
+
+/** `DeepSeek · deepseek-chat`, `本地 Ollama · qwen2.5:3b`. */
+export function modelSourceText(src: Pick<ChatModelSource, "label" | "model">): string {
+  return `${src.label} · ${src.model}`;
+}
+
 export type ChatServiceEvent =
+  /** First event of a turn stream: the turn id (for resume / stop) — #19 part 2. */
+  | { type: "turn"; turnId: string }
+  /** The model this turn used, from FastClaw's own chunk `model` field. */
+  | { type: "source"; source: ChatModelSource }
   | { type: "delta"; content: string }
   | { type: "tool"; id: string; name: string; status: "running" | "done" }
   | { type: "done"; finishReason: string | null }
@@ -69,7 +153,38 @@ export type ChatServiceEvent =
       code?: string;
       /** Ready-to-show Chinese text (see CHAT_ERROR_MESSAGES). */
       message: string;
-    };
+    }
+  /** Stopped by the user (POST /chat/turns/:id/stop). The server-side outcome is unknown. */
+  | { type: "stopped" }
+  /** Resume of a turn that already ended: its final state from SQLite. */
+  | { type: "snapshot"; turn: ChatTurnSnapshot };
+
+/** Every event on the wire carries `seq` (1, 2, …) so a resumed stream can skip what it has. */
+export type ChatWireEvent = ChatServiceEvent & { seq?: number };
+
+export type ChatTurnStatus = "streaming" | "done" | "stopped" | "interrupted" | "failed" | "unavailable";
+
+/** One turn as stored in the task-manager SQLite (`chat_turns`), for restore after reopen/refresh. */
+export interface ChatTurnSnapshot {
+  id: string;
+  sessionId: string;
+  userContent: string;
+  status: ChatTurnStatus;
+  text: string;
+  tools: Array<{ id: string; name: string; status: "running" | "done" }>;
+  error?: { reason: ChatErrorReason; code?: string; message: string };
+  source?: ChatModelSource;
+  /** Last event seq folded into this snapshot; resume with `?after=<lastSeq>`. */
+  lastSeq: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** GET /chat/sessions/:id */
+export interface ChatSessionSnapshot {
+  sessionId: string;
+  turns: ChatTurnSnapshot[];
+}
 
 export interface ChatSendRequest {
   content: string;

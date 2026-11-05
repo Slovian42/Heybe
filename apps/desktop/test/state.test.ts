@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { chatReducer, initialChatState, STATUS_TEXT, statusText } from "../src/chat/state";
+import type { ChatTurnSnapshot } from "@heybe/shared-types/chat";
+
+import { chatReducer, initialChatState, runningMessage, STATUS_TEXT, statusText, STOPPED_HINT } from "../src/chat/state";
 
 const sent = chatReducer(initialChatState, { type: "send", userId: "u1", assistantId: "a1", content: "hi" });
 const a1 = (s: typeof sent) => s.messages.find((m) => m.id === "a1")!;
@@ -41,8 +43,62 @@ describe("chatReducer", () => {
     expect(statusText(a1(err))).toBe("模型密钥无效，请到设置里更换");
     // Older service without reason/message text: fall back to the generic status text.
     const bare = chatReducer(sent, { type: "event", assistantId: "a1", event: { type: "error", kind: "failed", message: "" } });
-    expect(statusText(a1(bare))).toBe("没做成");
+    expect(statusText(a1(bare))).toBe("没做成，请稍后再试");
+    expect(Object.values(STATUS_TEXT)).not.toContain("没做成");
     expect(statusText({ status: "stopped" })).toBe(STATUS_TEXT.stopped);
+  });
+
+  it("skips replayed events by seq (resume after reconnect does not double the text)", () => {
+    const ev = (seq: number, content: string) => ({ type: "event" as const, assistantId: "a1", event: { type: "delta" as const, content, seq } });
+    let s = chatReducer(sent, { type: "event", assistantId: "a1", event: { type: "turn", turnId: "T", seq: 1 } });
+    s = chatReducer(s, ev(2, "你"));
+    s = chatReducer(s, ev(3, "好"));
+    // reconnect replays from after=2 but a slow first stream also re-sends 3
+    s = chatReducer(s, ev(3, "好"));
+    s = chatReducer(s, ev(4, "！"));
+    expect(a1(s)).toMatchObject({ text: "你好！", lastSeq: 4, turnId: "T" });
+  });
+
+  it("records the model source and the server-side stop", () => {
+    const source = { provider: "ollama", model: "qwen2.5:3b", label: "本地 Ollama", locality: "local" as const };
+    let s = chatReducer(sent, { type: "event", assistantId: "a1", event: { type: "source", source, seq: 2 } });
+    s = chatReducer(s, { type: "event", assistantId: "a1", event: { type: "stopped", seq: 3 } });
+    expect(a1(s)).toMatchObject({ source, status: "stopped" });
+    expect(s.stoppedBefore).toBe(true);
+    expect(STOPPED_HINT).toBe("上一轮已停止，服务端可能仍会补完");
+    expect(runningMessage(s)).toBeUndefined();
+  });
+
+  it("a snapshot (turn ended while away) replaces the message with the stored final state", () => {
+    let s = chatReducer(sent, { type: "event", assistantId: "a1", event: { type: "delta", content: "半", seq: 2 } });
+    s = chatReducer(s, { type: "event", assistantId: "a1", event: { type: "snapshot", turn: snap({ text: "半句完整", status: "done", lastSeq: 9 }), seq: 9 } });
+    expect(a1(s)).toMatchObject({ id: "a1", text: "半句完整", status: "done", lastSeq: 9 });
+  });
+
+  it("load rebuilds the conversation from the service and restores the stop hint", () => {
+    const s = chatReducer(initialChatState, {
+      type: "load",
+      turns: [snap({ id: "t1", text: "答一", status: "done" }), snap({ id: "t2", userContent: "问二", text: "答", status: "stopped" })],
+    });
+    expect(s.messages.map((m) => [m.role, m.text, m.status])).toEqual([
+      ["user", "问", "done"],
+      ["assistant", "答一", "done"],
+      ["user", "问二", "done"],
+      ["assistant", "答", "stopped"],
+    ]);
+    expect(s.stoppedBefore).toBe(true);
+  });
+
+  it("load keeps the live message id, and a stored final state beats a local 'still streaming'", () => {
+    let s = chatReducer(sent, { type: "event", assistantId: "a1", event: { type: "turn", turnId: "T", seq: 1 } });
+    s = chatReducer(s, { type: "event", assistantId: "a1", event: { type: "delta", content: "abc", seq: 4 } });
+    const restarted = snap({ id: "T", text: "ab", status: "interrupted", lastSeq: 3, error: { reason: "service_restarted", message: "本地服务重启过，这一轮中断了，结果未知" } });
+    const after = chatReducer(s, { type: "load", turns: [restarted] });
+    expect(a1(after)).toMatchObject({ id: "a1", status: "interrupted", text: "abc" });
+    expect(statusText(a1(after))).toBe("本地服务重启过，这一轮中断了，结果未知");
+    // still running on the service but we are ahead: keep ours
+    const ahead = chatReducer(s, { type: "load", turns: [snap({ id: "T", text: "a", status: "streaming", lastSeq: 2 })] });
+    expect(a1(ahead)).toMatchObject({ text: "abc", lastSeq: 4, status: "streaming" });
   });
 
   it("keeps HTML as plain text in state (rendered as a text node)", () => {
@@ -63,3 +119,18 @@ describe("WARN_TOOLS (#67)", () => {
     expect(WARN_TOOLS.has("web_fetch")).toBe(false);
   });
 });
+
+function snap(over: Partial<ChatTurnSnapshot>): ChatTurnSnapshot {
+  return {
+    id: "t",
+    sessionId: "s",
+    userContent: "问",
+    status: "done",
+    text: "",
+    tools: [],
+    lastSeq: 5,
+    createdAt: "2026-11-04T00:00:00Z",
+    updatedAt: "2026-11-04T00:00:00Z",
+    ...over,
+  };
+}
